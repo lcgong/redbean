@@ -1,4 +1,5 @@
 version: 1
+disable_existing_loggers: False
 
 formatters:
   brief:
@@ -14,6 +15,15 @@ handlers:
     formatter: simple
     stream: ext://sys.stdout
 
+
 root:
   level: DEBUG
   handlers: [console]
+
+loggers:
+  asyncio:
+    level: INFO
+  aiohttp:
+    level: INFO
+  watchdog:
+    level: INFO
