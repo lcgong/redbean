@@ -3,11 +3,11 @@ from redbean import route_base, rest_service
 
 route_base('../')
 
-print(456)
+print(456233)
 
 @rest_service.GET('user/{user_id:int}/info')
 def get_user_info(user_id: int, sortno):
-    logging.warning('user3332')
+    logging.warning('user335532')
     # raise ValueError(333)
     return {"user_id": user_id}
 

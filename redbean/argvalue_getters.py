@@ -53,30 +53,7 @@ def _build_argval_getter(arg_name, arg_spec, is_path_param):
 
     return _getter
 
-def build_result_filter(proto, method):
-    func_sig = inspect.signature(handler_func)
 
-    ret_type = func_sig.return_annotation
-    if ret_type == inspect._empty:
-        return lambda result : result
-
-    if issubclass(ret_type, DSet[DObject]):
-        return _returne_dset_object
-
-    if issubclass(result.__class__, ret_type) :
-        return lambda result: result
-
-
-    return lambda result: ret_type(result)
-
-
-async def _dset_result_filter_factory(result):
-    if isinstance(result, DSetBase):
-        return result
-
-    item_type = ret_type.__parameters__[0]
-    result = dset(item_type)([result])
-    return result
 
 
 #----------------------------------------------------------------------------

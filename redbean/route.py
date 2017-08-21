@@ -14,55 +14,40 @@ from .route_spec import parse_path, routespec_registry
 
 import aiohttp.web
 
+def register_module(app, root, *, prefix='/'):
 
-class Application(aiohttp.web.Application):
+    for module_name in list(routespec_registry.keys()):
+        if module_name.startswith(root):
+            del routespec_registry[module_name]
 
+    if not prefix.startswith('/') :
+        raise ValueError(f"The prefix '{prefix}' should start with '/'")
 
-    def add_module(self, root, *, prefix='/'):
+    assert isinstance(root, str) and len(root) > 1 and not root.endswith('.')
 
-        for module_name in list(routespec_registry.keys()):
-            if module_name.startswith(root):
-                print('del: ', module_name)
-                del routespec_registry[module_name]
+    resources = OrderedDict()
+    for path_base, route_specs in _normal_path_base(root, prefix):
+        for spec in route_specs:
+            abspath = urljoin(path_base, spec.path)
+            path_signature, path_params, path_pattern = parse_path(abspath)
 
-        if not prefix.startswith('/') :
-            raise ValueError(f"The prefix '{prefix}' should start with '/'")
+            if path_pattern not in resources:
+                resources[path_pattern] = (path_signature, path_params, [])
 
-        assert isinstance(root, str) and len(root) > 1 and not root.endswith('.')
+            resources[path_pattern][2].append(spec)
 
-        resources = OrderedDict()
-        for path_base, route_specs in _normal_path_base(root, prefix):
-            for spec in route_specs:
-                abspath = urljoin(path_base, spec.path)
-                path_signature, path_params, path_pattern = parse_path(abspath)
+    for path_pattern, (path_signature, path_params, specs) in resources.items():
+        formatter = path_signature.format(*( "{"+p+"}" for p in path_params))
 
-                if path_pattern not in resources:
-                    resources[path_pattern] = (path_signature, path_params, [])
+        resource  = DynamicResource(path_pattern, formatter)
+        app.router.register_resource(resource)
 
-                resources[path_pattern][2].append(spec)
+        for route_spec in specs:
+            for method in route_spec.methods:
+                handler = request_handler_factory(route_spec, method, path_signature, path_params)
+                route = resource.add_route(method, handler)
 
-        for path_pattern, (path_signature, path_params, specs) in resources.items():
-            formatter = path_signature.format(*( "{"+p+"}" for p in path_params))
-
-            resource  = DynamicResource(path_pattern, formatter)
-            self.router.register_resource(resource)
-
-            for route_spec in specs:
-                for method in route_spec.methods:
-                    handler = request_handler_factory(route_spec, method, path_signature, path_params)
-                    route = resource.add_route(method, handler)
-
-                    setattr(route, '_routespec_handler', route_spec.handler_func)
-
-
-    def print_routes(self):
-        for resource in self.router._resources:
-            for route in resource:
-                method = route.method
-                formatter = route._resource._formatter
-                func_name = route._routespec_handler.__qualname__
-                module_name = route._routespec_handler.__module__
-                print(f"[{method}]{formatter} => {func_name} in {module_name}")
+                setattr(route, '_routespec_handler', route_spec.handler_func)
 
 
 def _parent_name(module_name):
