@@ -146,10 +146,6 @@ class RouteSpecDecorator():
         return RouteSpec(self.proto).DELETE
 
 
-rest_service = RouteSpecDecorator('REST_SERIVCE')
-page_view    = RouteSpecDecorator('PAGE_VIEW')
-http_request = RouteSpecDecorator('HTTP_REQUEST')
-
 
 _ROUTE_RE = re.compile(r'(\{[_a-zA-Z][^{}]*(?:\{[^{}]*\}[^{}]*)*\})')
 _SOLID_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*)\}')

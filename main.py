@@ -8,18 +8,21 @@ with Path('test/logging.yaml').open() as config:
 
 
 import redbean
+import domainics.redbean
 
-from redbean.run_app import autoreload_app
+from redbean.run_app import run_app, autoreload_app
 
-mainapp = redbean.Application()
-mainapp.add_module('test.case1', prefix='/app')
+app = redbean.Application()
+app.add_module('test.case1', prefix='/app')
 
 
 work_path = str(Path(__file__).parent.resolve())
 
 if __name__=='__main__':
 
-    autoreload_app(mainapp, work_path)
+    run_app(app)
+
+    # autoreload_app(mainapp, work_path)
 
 
 # if __name__=='__main__':

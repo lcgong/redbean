@@ -1,22 +1,33 @@
 import logging
-from redbean import route_base, rest_service
+from redbean import route_base, REST, HTTP
+from domainics.domobj import dset, datt, dobject, DObject, DSet
 
-route_base('../')
+logger = logging.getLogger(__name__)
 
-print(456233)
+route_base('../user/')
 
-@rest_service.GET('user/{user_id:int}/info')
-def get_user_info(user_id: int, sortno):
-    logging.warning('user335532')
-    # raise ValueError(333)
-    return {"user_id": user_id}
+from redbean import Invalidation
+
+class User(dobject):
+    user_id = datt(int)
+
+@REST.GET('{user_id}/info')
+async def get_user_info(user_id: int, sortno) -> DObject:
+    # raise Invalidation(f"用户{user_id}没有满足条件")
+    u = User(user_id=user_id)
+    return u
+
+@HTTP.GET('{user_id:int}/txt')
+async def pageview_user_info(user_id: int, sortno) -> str:
+    raise Invalidation(f"用户{user_id}没有满足条件")
+    u = User(user_id=user_id)
+    return u
 
 
-@rest_service.GET('user/{user_id:int}/suspend')
-def get_user_list(user_id):
-    return {"user_id": user_id}
-
-
-@rest_service.PUT('user/{user_id:int}/info')
-def set_user_info(user_id):
-    return {"user_id": user_id}
+# @rest_service.GET('{user_id:int}/suspend')
+# def get_user_list(user_id) -> DSet:
+#     return {"user_id": user_id}
+#
+# @rest_service.PUT('{user_id:int}/info')
+# def set_user_info(user_id) -> None:
+#     pass

@@ -7,13 +7,17 @@ class Application(aiohttp.web.Application):
 
     def __init__(self, *args, **kwargs):
         super(Application, self).__init__(**kwargs)
+        self._modules = []
+
         self.on_startup.append(_on_startup)
 
     def add_module(self, root, *, prefix='/'):
-        return register_module(self, root, prefix=prefix)
-
+        self._modules.append((root,prefix))
 
 def _on_startup(app):
+    for root, prefix in app._modules:
+        register_module(app, root, prefix=prefix)
+
     print_route_specs(app)
 
 def print_route_specs(app):
