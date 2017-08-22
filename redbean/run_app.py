@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 
 import logging
 logger = logging.getLogger(__name__)
@@ -9,6 +10,7 @@ import signal
 import sys
 import inspect
 
+from pathlib import Path
 from multiprocessing import set_start_method, Process
 from importlib import import_module
 from datetime import datetime
@@ -18,7 +20,7 @@ from watchdog.events import PatternMatchingEventHandler
 from watchdog.events import match_any_paths, unicode_paths
 
 import redbean
-
+import click
 
 """
 
@@ -26,18 +28,45 @@ Referrences:
     https://github.com/aio-libs/aiohttp-devtools
 """
 
-def autoreload_app(app, work_path=None,
+from aiohttp.web import run_app as aiohttp_run_app
+
+
+def run_app(app, description="redbean"):
+    import argparse
+
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument('--host', '-H', default='localhost', help="server host address")
+    parser.add_argument('--port', '-p',  type=int, default=8080, help="server port number")
+    parser.add_argument('-d',  default='./', help="work directory")
+    parser.add_argument('--production', action='store_true')
+    args = parser.parse_args()
+
+    if args.production:
+        aiohttp_run_app(app, port=args.port, host=args.host)
+    else:
+        app._debug = True
+        app_factory_name = None
+        frame = sys._getframe(1)
+        for var_name, var_val in frame.f_globals.items():
+            if var_val is app:
+                app_factory_name = var_name
+                break
+        assert app_factory_name
+
+        work_path = str(Path.cwd())
+
+        autoreload_app(app_factory_name, port=args.port, host=args.host,
+            work_path=work_path)
+
+
+def autoreload_app(app_factory_name, work_path=None,
     host: str='localhost', port: int=8080,
     loop: asyncio.AbstractEventLoop=None, **config_kwargs):
 
+    assert isinstance(app_factory_name, str)
+    app = _get_app_factory(app_factory_name)
+
     # find the global variabl name of the app value
-    app_factory_name = None
-    frame = sys._getframe(1)
-    for var_name, var_val in frame.f_globals.items():
-        if var_val is app:
-            app_factory_name = var_name
-            break
-    assert app_factory_name
 
     set_start_method('spawn')
     loop = loop or asyncio.get_event_loop()
@@ -174,15 +203,17 @@ class FileChangedEventHandler(PatternMatchingEventHandler):
 
         logger.warning('server process already dead, exit code: %d', self._process.exitcode)
 
+def _get_app_factory(name):
+    main_module = import_module('__main__')
+    app = getattr(main_module, name)
+    assert not app
+    return app
 
 def _run_app(app_factory_name, host=None, port=None, ssl_context=None,
             backlog=128, access_log_format=None):
 
     assert isinstance(app_factory_name, str)
-
-    main_module = import_module('__main__')
-    app = getattr(main_module, app_factory_name)
-    assert not app
+    app = _get_app_factory(app_factory_name)
 
     loop = asyncio.get_event_loop()
     try:
