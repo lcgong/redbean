@@ -9,28 +9,31 @@ _handler_argval_getters = []
 def register_argument_getter(getter_factory):
     _handler_argval_getters.append(getter_factory)
 
-def build_argval_getters(proto, method, handler, path_params):
+def build_argval_getters(route_spec):
+
+    # proto, method, handler_func, path_fields
+    # proto, method, handler, path_params
 
     getters = []
-    for arg_name in inspect.signature(handler).parameters:
-        getter = _build_argval_getter(proto, method, handler, path_params, arg_name)
+    for arg_name in inspect.signature(route_spec.handler_func).parameters:
+        getter = _build_argval_getter(route_spec, arg_name)
         getters.append(getter)
 
     return getters
 
-def _build_argval_getter(proto, method, handler_func, path_params, arg_name):
-    arg_spec = inspect.signature(handler_func).parameters[arg_name]
+def _build_argval_getter(route_spec, arg_name):
+    arg_spec = inspect.signature(route_spec.handler_func).parameters[arg_name]
 
     ann_type = arg_spec.annotation
     argval_getter = None
     if ann_type != inspect._empty:
         for getter_factory in _handler_argval_getters[::-1]:
-            argval_getter = getter_factory(proto, method, handler_func, path_params, arg_name)
+            argval_getter = getter_factory(route_spec, arg_name)
             if argval_getter is not None:
                 break
 
     if argval_getter is None:
-        argval_getter = _defaul_argval_getter(proto, method, handler_func, path_params, arg_name)
+        argval_getter = _defaul_argval_getter(route_spec, arg_name)
 
     if arg_spec.default is not inspect._empty:
         async def _getter(request):
@@ -55,11 +58,9 @@ def _build_argval_getter(proto, method, handler_func, path_params, arg_name):
 
 #----------------------------------------------------------------------------
 
-def default_argval_getter_factory(proto, method, handler_func, path_params, arg_name):
+def default_argval_getter_factory(route_spec, arg_name):
 
-    is_path_param = arg_name in path_params
-
-    if is_path_param:
+    if arg_name in route_spec.path_fields:
         async def _path_param_getter(request):
             return request.match_info.get(arg_name)
         return _path_param_getter
@@ -78,11 +79,11 @@ def default_argval_getter_factory(proto, method, handler_func, path_params, arg_
 
     return _argvalue_func
 
-def _defaul_argval_getter(proto, method, handler_func, path_params, arg_name):
-    arg_spec = inspect.signature(handler_func).parameters[arg_name]
+def _defaul_argval_getter(route_spec, arg_name):
+    arg_spec = inspect.signature(route_spec.handler_func).parameters[arg_name]
     ann_type = arg_spec.annotation
 
-    read_argval = default_argval_getter_factory(proto, method, handler_func, path_params, arg_name)
+    read_argval = default_argval_getter_factory(route_spec, arg_name)
 
     if (issubclass(ann_type, int) or issubclass(ann_type, float)):
         async def _getter_func(request):
@@ -104,21 +105,21 @@ async def read_json(request):
     return json.loads(text)
 
 
-def _json_arg_getter(proto, method, handler_func, path_params, arg_name):
+def _json_arg_getter(route_spec, arg_name):
     if arg_name not in ['json_arg', 'json_body']:
         return
 
     return read_json
 
 
-def _datetime_value_getter(proto, method, handler, path_params, arg_name):
-    arg_spec = inspect.signature(handler).parameters[arg_name]
+def _datetime_value_getter(route_spec, arg_name):
+    arg_spec = inspect.signature(route_spec.handler_func).parameters[arg_name]
     ann_type = arg_spec.annotation
 
     if not issubclass(ann_type, datetime):
         return
 
-    read_argval = default_argval_getter_factory(proto, method, handler, path_params, arg_name)
+    read_argval = default_argval_getter_factory(route_spec, arg_name)
 
     async def getter(request):
         arg_val = arrow.get(read_argval(request)).datetime
@@ -126,14 +127,14 @@ def _datetime_value_getter(proto, method, handler, path_params, arg_name):
 
     return getter
 
-def _date_value_getter(proto, method, handler, path_params, arg_name):
-    arg_spec = inspect.signature(handler).parameters[arg_name]
+def _date_value_getter(route_spec, arg_name):
+    arg_spec = inspect.signature(route_spec.handler_func).parameters[arg_name]
     ann_type = arg_spec.annotation
 
     if not issubclass(ann_type, date):
         return
 
-    read_argval = default_argval_getter_factory(proto, method, handler, path_params, arg_name)
+    read_argval = default_argval_getter_factory(route_spec, arg_name)
 
     async def getter(request, arg_val):
         arg_val = arrow.get(arg_val).datetime.date()

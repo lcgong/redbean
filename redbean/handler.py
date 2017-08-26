@@ -23,7 +23,7 @@ def request_handler_factory(route_spec, method):
     func_sig = inspect.signature(handler_func)
 
     param_names = list(func_sig.parameters.keys())
-    arg_getters  = build_argval_getters(proto, method, handler_func, path_fields)
+    arg_getters  = build_argval_getters(route_spec)
     resp_writer  = make_response_writer(proto, method, handler_func)
 
     handle_error = make_error_handler(proto, method, handler_func)
@@ -61,6 +61,9 @@ def request_handler_factory(route_spec, method):
 
     if inspect.iscoroutinefunction(handler_func):
         async def _request_handler(request):
+
+            request._redbean_route_spec = route_spec
+
             arguments, errors = await _arg_values(request)
             if errors: return _handle_arg_error(errors)
 
