@@ -8,6 +8,10 @@ from collections.abc import Mapping, Sequence, Iterable
 from .json import json_dumps
 from .exception import HandlerSpecError
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 _response_writers = []
 
 def register_response_writer(writer_factory):
@@ -49,12 +53,23 @@ def make_error_handler(proto, method, handler):
 
 def _handle_rest_error(request, exc_val):
 
-    error_json = {
-        "error": exc_val.message if exc_val.message else str(exc_val.message)
-    }
+    if isinstance(exc_val, HTTPException):
+        status = exc_val.status_code
+        reason = exc_val.reason
+        if hasattr(exc_val, 'message'):
+            errmsg = exc_val.message
+        else:
+            errmsg = str(exc_val)
+    else:
+        status = 500
+        reason = "Internal Server Error"
+        errmsg = str(exc_val)
 
-    return json_response(error_json, status=exc_val.status_code,
-                            reason=exc_val.reason, dumps=json_dumps)
+    logger.error(exc_val, exc_info=True)
+
+
+    return json_response({"error":  errmsg}, status=status,
+                            reason=reason, dumps=json_dumps)
 
 def _handle_http_error(request, exc_val):
     if isinstance(exc_val, HTTPException):

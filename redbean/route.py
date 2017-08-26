@@ -1,6 +1,3 @@
-
-
-
 import inspect
 from urllib.parse import urljoin
 from collections import OrderedDict
@@ -9,7 +6,7 @@ from importlib import  import_module
 
 from aiohttp.web_urldispatcher import DynamicResource
 
-from .handlers import request_handler_factory
+from .handler import request_handler_factory
 from .route_spec import parse_path, routespec_registry
 
 import aiohttp.web

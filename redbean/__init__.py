@@ -7,5 +7,8 @@ from .exception import Invalidation
 
 from .route_spec import RouteSpecDecorator
 
+
+from .run_app import run_app
+
 REST = RouteSpecDecorator('REST')
 HTTP = RouteSpecDecorator('HTTP')

@@ -31,13 +31,14 @@ Referrences:
 from aiohttp.web import run_app as aiohttp_run_app
 
 
+
 def run_app(app, description="redbean"):
     import argparse
 
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('--host', '-H', default='localhost', help="server host address")
     parser.add_argument('--port', '-p',  type=int, default=8080, help="server port number")
-    parser.add_argument('-d',  default='./', help="work directory")
+    parser.add_argument('-d',  default=['./'], nargs='*', dest='work_paths', help="work directory")
     parser.add_argument('--production', action='store_true')
     args = parser.parse_args()
 
@@ -53,18 +54,19 @@ def run_app(app, description="redbean"):
                 break
         assert app_factory_name
 
-        work_path = str(Path.cwd())
+        work_paths = (Path(p) for p in args.work_paths)
+        work_paths = [ str(p) for p in work_paths if p.exists()]
 
         autoreload_app(app_factory_name, port=args.port, host=args.host,
-            work_path=work_path)
+            work_paths=work_paths)
 
 
-def autoreload_app(app_factory_name, work_path=None,
+def autoreload_app(app_runinfo, work_paths=None,
     host: str='localhost', port: int=8080,
     loop: asyncio.AbstractEventLoop=None, **config_kwargs):
 
-    assert isinstance(app_factory_name, str)
-    app = _get_app_factory(app_factory_name)
+    # assert isinstance(app_factory_name, str)
+    # app = _get_app_factory(app_factory_name)
 
     # find the global variabl name of the app value
 
@@ -76,10 +78,14 @@ def autoreload_app(app_factory_name, work_path=None,
     #-------------------------------------------------------
 
     observer = Observer()
-    changed_handler = FileChangedEventHandler(app_factory_name, host, port)
-    observer.schedule(changed_handler, work_path, recursive=True)
+    changed_handler = FileChangedEventHandler(app_runinfo, host, port)
+    for path in work_paths:
+        logger.info(f"watching file changes in '{path}' ...")
+        observer.schedule(changed_handler, path, recursive=True)
+
     observer.start()
 
+    app = _lookup_app(app_runinfo)
     handler = app.make_handler(access_log=None, loop=loop)
 
     try:
@@ -132,8 +138,8 @@ class FileChangedEventHandler(PatternMatchingEventHandler):
     ]
     skipped_event = False
 
-    def __init__(self, app_factory_name, host: str, port: int, *args, **kwargs):
-        self._app_factory_name = app_factory_name
+    def __init__(self, app_runinfo, host: str, port: int, *args, **kwargs):
+        self._app_runinfo = app_runinfo
         self._host = host
         self._port = port
 
@@ -179,7 +185,7 @@ class FileChangedEventHandler(PatternMatchingEventHandler):
             logger.warning(f'Restarting http://{self._host}:{self._port} ●')
 
         self._process = Process(target=_run_app,
-                        args=(self._app_factory_name,),
+                        args=(self._app_runinfo,),
                         kwargs=dict(
                             host=self._host,
                             port=self._port,
@@ -203,17 +209,28 @@ class FileChangedEventHandler(PatternMatchingEventHandler):
 
         logger.warning('server process already dead, exit code: %d', self._process.exitcode)
 
-def _get_app_factory(name):
-    main_module = import_module('__main__')
-    app = getattr(main_module, name)
-    assert not app
-    return app
+def _lookup_app(app_runinfo):
+    app_module = import_module(app_runinfo.module_name)
+    if app_runinfo.attribute_name:
+        app = getattr(app_module, app_runinfo.attribute_name)
+        assert app is not None
+        return app
 
-def _run_app(app_factory_name, host=None, port=None, ssl_context=None,
-            backlog=128, access_log_format=None):
+    if app_runinfo.factory_name:
+        app_factory = getattr(app_module, app_runinfo.attribute_name, None)
+        assert app_factory is not None
+        app = app_factory()
+        assert app
+        return app
 
-    assert isinstance(app_factory_name, str)
-    app = _get_app_factory(app_factory_name)
+    raise ValueError("confused application info: " + str(app_runinfo))
+
+
+
+def _run_app(app_runinfo, host=None, port=None,
+             ssl_context=None, backlog=128, access_log_format=None):
+
+    app = _lookup_app(app_runinfo)
 
     loop = asyncio.get_event_loop()
     try:

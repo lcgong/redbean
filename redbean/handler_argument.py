@@ -35,8 +35,8 @@ def _build_argval_getter(proto, method, handler_func, path_params, arg_name):
     if arg_spec.default is not inspect._empty:
         async def _getter(request):
             arg_val = await argval_getter(request)
-            if arg_val is None:
-                arg_val = arg_spec.default
+            # if arg_val is None:
+            #     arg_val = arg_spec.default
 
             return arg_val
     else:
