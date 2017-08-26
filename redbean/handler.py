@@ -14,13 +14,16 @@ from .exception import NotSupportedException
 from .handler_response import make_response_writer, make_error_handler
 from .handler_argument import build_argval_getters
 
-def request_handler_factory(route_spec, method, path_signature, path_params):
+def request_handler_factory(route_spec, method):
+    path_signature = route_spec.path_signature
+    path_fields = route_spec.path_fields
     proto = route_spec.proto
-    func_sig = inspect.signature(route_spec.handler_func)
     handler_func = route_spec.handler_func
 
+    func_sig = inspect.signature(handler_func)
+
     param_names = list(func_sig.parameters.keys())
-    arg_getters  = build_argval_getters(proto, method, handler_func, path_params)
+    arg_getters  = build_argval_getters(proto, method, handler_func, path_fields)
     resp_writer  = make_response_writer(proto, method, handler_func)
 
     handle_error = make_error_handler(proto, method, handler_func)

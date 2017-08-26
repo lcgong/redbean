@@ -26,8 +26,8 @@ def print_route_specs(app):
         for route in resource:
             method = route.method
             formatter = route._resource._formatter
-            func_name = route._routespec_handler.__qualname__
-            module_name = route._routespec_handler.__module__
+            func_name = route._route_spec.handler_func.__qualname__
+            module_name = route._route_spec.handler_func.__module__
             infos.append(f"[{method}]{formatter} => {func_name} in {module_name}")
 
     app.logger.info('Route Definition:\n' + '\n'.join(infos) + '\n')

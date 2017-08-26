@@ -3,6 +3,7 @@ import inspect
 import re
 import sys
 from yarl import URL
+from urllib.parse import urljoin
 
 
 routespec_registry = {}
@@ -50,101 +51,106 @@ class RouteSpecGroup:
 
 class RouteSpec():
 
-    def __init__(self, proto):
+    def __init__(self, proto, path, methods):
+        self.proto = proto
+        self.path = path
+        self.methods = methods
+
         self.handler_func = None
 
-        self.proto = proto        # http protocol
-        self.methods = []         # http methods
+        self.path_fields = None
+        self.query_fields = None
+        self.post_fields = None
 
         self.code_filename = None
         self.code_lineno = None
 
-    def add_method(self, method):
-        self.methods.append(method)
+        self.abspath = None
+        self._prefix = None
 
-    def __call__(self, path):
+    @property
+    def prefix(self):
+        return self._prefix
 
-        self.path = path
+    def set_prefix(self, path_prefix):
+        self.abspath = urljoin(path_prefix, self.path)
+        parse_path(self, self.abspath)
 
-        def decorator(handler_func):
-            frame = sys._getframe(1)
-            if frame:
-                self.code_filename = frame.f_code.co_filename
-                self.code_lineno = frame.f_lineno
-
-            self.handler_func = handler_func
-
-            module = inspect.getmodule(frame)
-            routespec_group = get_routespec_group(module.__name__)
-
-            routespec_group.add(self)
-
-            return handler_func
-
-        return decorator
 
     def __repr__(self):
         return (f"<RouteSpec '{self.path}' "
                 f"[{','.join(self.methods)}] '{self.handler_func.__name__}' "
                 f"in '{self.handler_func.__module__}'>")
 
-    @property
-    def GET(self) :
-        self.methods.append('GET')
-        return self
+def _register_route_spect(route_spec, frame):
+    assert frame
 
-    @property
-    def POST(self) :
-        self.methods.append('POST')
-        return self
+    route_spec.code_filename = frame.f_code.co_filename
+    route_spec.code_lineno = frame.f_lineno
 
-    @property
-    def PUT(self) :
-        self.methods.append('PUT')
-        return self
-
-    @property
-    def DELETE(self) :
-        self.methods.append('DELETE')
-        return self
-
-
-_SPACE_COMMA_SEPERATOR_RE = re.compile(r'\s*[,]?\s*')
+    caller_module = inspect.getmodule(frame)
+    routespec_group = get_routespec_group(caller_module.__name__)
+    routespec_group.add(route_spec)
 
 class RouteSpecDecorator():
+    def __init__(self, proto):
+        self.proto = proto
+        self.methods = []
+
+    def __call__(self, path, query_fields=None, post_fields=None):
+
+        def decorator(handler_func):
+
+            route_spec = RouteSpec(self.proto, path, self.methods)
+
+            route_spec.handler_func = handler_func
+            route_spec.query_fields = _parse_fields(query_fields)
+            route_spec.post_fields = _parse_fields(post_fields)
+
+            _register_route_spect(route_spec, frame=sys._getframe(1))
+
+            return handler_func
+
+        return decorator
+
+    def __getattr__(self, method):
+        return self.add_method(method)
+
+    def add_method(self, method):
+        method = method.upper()
+        if method not in ['GET', 'POST', 'PUT', 'DELETE']:
+            raise ValueError(f"Not support {method}")
+
+        self.methods.append(method)
+        return self
+
+
+class RouteSpecDecoratorFactory():
 
     def __init__(self, proto):
         self.proto = proto
+        self.methods = []
 
-    def __call__(self, path, *, methods=None):
-        """
-        method: 'GET,POST' or 'GET POST'
-        """
-        route_spec = RouteSpec(self.proto)
-        if methods and isinstance(methods, str):
-            for method in SPACE_COMMA_SEP_RE.split(methods):
-                route_spec.add_method(method)
+    def __getattr__(self, method):
+        decorator = RouteSpecDecorator(self.proto)
+        return decorator.add_method(method)
 
-        route_spec.path = path
 
-        return route_spec
+_SPACE_COMMA_SEPERATOR_RE = re.compile(r'\s*[,]?\s*')
+def _parse_fields(expr):
+    if not expr:
+        return []
 
-    @property
-    def GET(self) :
-        return RouteSpec(self.proto).GET
+    if expr and isinstance(expr, str):
+        return list(m for m in SPACE_COMMA_SEP_RE.split(expr))
 
-    @property
-    def POST(self) :
-        return RouteSpec(self.proto).POST
+    if isinstance(expr, Sequence):
+        for m in expr:
+            if not isinstance(m, str):
+                raise ValueError(f"unkown type '{m.__class__.__name__}'")
+        return expr
 
-    @property
-    def PUT(self) :
-        return RouteSpec(self.proto).PUT
-
-    @property
-    def DELETE(self) :
-        return RouteSpec(self.proto).DELETE
-
+    raise ValueError(f"unknown type {expr} ")
 
 
 _ROUTE_RE = re.compile(r'(\{[_a-zA-Z][^{}]*(?:\{[^{}]*\}[^{}]*)*\})')
@@ -152,20 +158,20 @@ _SOLID_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*)\}')
 _TYPED_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*):(?P<type>\s*(?:int|float|str|path))\s*\}')
 _REGEX_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*):(?P<re>.+)\}')
 
-def parse_path(pathexpr):
+def parse_path(route_spec, pathexpr):
 
     pattern, signature = '', ''
 
-    parameters = []
+    fields = []
     startpos = 0
     for param_part in _ROUTE_RE.finditer(pathexpr):
         part = param_part.group(0)
 
         param_name, param_regex = _parse_pathexpr_part(part)
-        if param_name in parameters:
+        if param_name in fields:
             raise ValueError(f"duplicated '{{{param_name}}}' in '{pathexpr}'");
 
-        parameters.append(param_name)
+        fields.append(param_name)
 
         norm_part  = _escape_norm_part(pathexpr, startpos, param_part.start())
         pattern   += re.escape(norm_part) + f'(?P<{param_name}>{param_regex})'
@@ -182,7 +188,11 @@ def parse_path(pathexpr):
         raise ValueError(
             "Bad pattern '{}': {}".format(pattern, exc)) from None
 
-    return signature, parameters, pattern
+    route_spec.path_signature = signature
+    route_spec.path_fields    = fields
+    route_spec.path_pattern   = pattern
+    route_spec.path_formatter = signature.format(*("{"+p+"}" for p in fields))
+
 
 def _parse_pathexpr_part(part):
     match = _SOLID_PARAM_RE.fullmatch(part)

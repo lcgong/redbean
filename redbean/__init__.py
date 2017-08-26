@@ -5,10 +5,10 @@ from .route_spec import route_base
 from .app import Application
 from .exception import Invalidation
 
-from .route_spec import RouteSpecDecorator
+from .route_spec import RouteSpecDecoratorFactory
 
 
 from .run_app import run_app
 
-REST = RouteSpecDecorator('REST')
-HTTP = RouteSpecDecorator('HTTP')
+REST = RouteSpecDecoratorFactory('REST')
+HTTP = RouteSpecDecoratorFactory('HTTP')

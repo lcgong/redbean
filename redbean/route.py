@@ -22,30 +22,32 @@ def register_module(app, root, *, prefix='/'):
 
     assert isinstance(root, str) and len(root) > 1 and not root.endswith('.')
 
-    resources = OrderedDict()
+    resources = OrderedDict() # group route specs by the path's pattern
     for path_base, route_specs in _normal_path_base(root, prefix):
         for spec in route_specs:
-            abspath = urljoin(path_base, spec.path)
-            path_signature, path_params, path_pattern = parse_path(abspath)
+            spec.set_prefix(path_base)
+            group_key = (spec.path_pattern, spec.path_formatter)
+            if group_key not in resources:
+                resources[group_key] = [spec]
+            else:
+                specs = resources[group_key]
 
-            if path_pattern not in resources:
-                resources[path_pattern] = (path_signature, path_params, [])
+                for s in specs: # check method conflict
+                    for m in spec.methods:
+                        if m in s.methods:
+                            raise ValueError('confict method')
 
-            resources[path_pattern][2].append(spec)
+                specs.append(spec)
 
-    for path_pattern, (path_signature, path_params, specs) in resources.items():
-        formatter = path_signature.format(*( "{"+p+"}" for p in path_params))
-
-        resource  = DynamicResource(path_pattern, formatter)
+    for (path_pattern, path_formatter), specs in resources.items():
+        resource  = DynamicResource(path_pattern, path_formatter)
         app.router.register_resource(resource)
 
         for route_spec in specs:
             for method in route_spec.methods:
-                handler = request_handler_factory(route_spec, method, path_signature, path_params)
+                handler = request_handler_factory(route_spec, method)
                 route = resource.add_route(method, handler)
-
-                setattr(route, '_routespec_handler', route_spec.handler_func)
-
+                setattr(route, '_route_spec', route_spec)
 
 def _parent_name(module_name):
     idx = module_name.rfind('.')
