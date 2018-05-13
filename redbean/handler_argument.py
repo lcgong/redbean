@@ -27,7 +27,9 @@ def _build_argval_getter(route_spec, arg_name):
     ann_type = arg_spec.annotation
     argval_getter = None
     if ann_type != inspect._empty:
+        print(444, _handler_argval_getters)
         for getter_factory in _handler_argval_getters[::-1]:
+            print(333, getter_factory, arg_name)
             argval_getter = getter_factory(route_spec, arg_name)
             if argval_getter is not None:
                 break

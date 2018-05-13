@@ -142,7 +142,7 @@ def _parse_fields(expr):
         return []
 
     if expr and isinstance(expr, str):
-        return list(m for m in SPACE_COMMA_SEP_RE.split(expr))
+        return list(m for m in _SPACE_COMMA_SEPERATOR_RE.split(expr))
 
     if isinstance(expr, Sequence):
         for m in expr:
@@ -162,10 +162,13 @@ def parse_path(route_spec, pathexpr):
 
     pattern, signature = '', ''
 
+    # print(999, pathexpr)
+
     fields = []
     startpos = 0
     for param_part in _ROUTE_RE.finditer(pathexpr):
         part = param_part.group(0)
+        # print(733, part)
 
         param_name, param_regex = _parse_pathexpr_part(part)
         if param_name in fields:
@@ -174,7 +177,11 @@ def parse_path(route_spec, pathexpr):
         fields.append(param_name)
 
         norm_part  = _escape_norm_part(pathexpr, startpos, param_part.start())
-        pattern   += re.escape(norm_part) + f'(?P<{param_name}>{param_regex})'
+        
+        # print(111, norm_part, re.escape(norm_part))
+
+
+        pattern   += norm_part + f'(?P<{param_name}>{param_regex})'
         signature += norm_part + '{}'
         startpos = param_part.end()
 
@@ -187,6 +194,7 @@ def parse_path(route_spec, pathexpr):
     except re.error as exc:
         raise ValueError(
             "Bad pattern '{}': {}".format(pattern, exc)) from None
+    # print(555, pattern)
 
     route_spec.path_signature = signature
     route_spec.path_fields    = fields
@@ -225,6 +233,7 @@ def _parse_pathexpr_part(part):
 
 def _escape_norm_part(path, startpos, endpos):
     normal_part = path[startpos:endpos]
+
     if '{' in normal_part or '}' in normal_part:
         raise ValueError("Invalid path '{}'['{}']".format(path, normal_part))
 
