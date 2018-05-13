@@ -1,19 +1,15 @@
-import inspect
 from urllib.parse import urljoin
 from collections import OrderedDict
 from pkgutil import walk_packages
 from importlib import  import_module
 from yarl import URL
 
-# from aiohttp.web_urldispatcher import DynamicResource
-from aiohttp.web_urldispatcher import Resource
-
 from .handler import request_handler_factory
 from .route_spec import parse_path, routespec_registry
 
-import aiohttp.web
+import aiohttp
 
-class DynamicResource(Resource):
+class DynamicResource(aiohttp.web_urldispatcher.Resource):
 
     def __init__(self, pattern, formatter, *, name=None):
         super().__init__(name=name)
@@ -51,22 +47,13 @@ class DynamicResource(Resource):
         return URL.build(path=url)
 
 
-    # def url(self, *, parts, query=None):
-    #     super().url(**parts)
-    #     return str(self.url_for(**parts).with_query(query))
-
     def __repr__(self):
         name = "'" + self.name + "' " if self.name is not None else ""
         return ("<DynamicResource {name} {formatter}>"
                 .format(name=name, formatter=self._formatter))
 
-# from collections.abc import Sequence
 
-from aiohttp.web_routedef import AbstractRouteDef
-
-from aiohttp import hdrs
-
-class RouteDef(AbstractRouteDef):
+class RouteDef(object):
 
     def __inti__(self, spec, method, path, handler, **kwargs):
         self.spec = spec
@@ -93,35 +80,6 @@ class RouteDef(AbstractRouteDef):
                             **self.kwargs)
 
 
-# class Application(aiohttp.web.Application):
-
-#     def __init__(self, *args, **kwargs):
-#         super(Application, self).__init__(**kwargs)
-#         self._modules = []
-
-#         self.on_startup.append(_on_startup)
-
-#     def add_module(self, root, *, prefix='/'):
-#         self._modules.append((root,prefix))
-
-# def _on_startup(app):
-#     for root, prefix in app._modules:
-#         register_module(app, root, prefix=prefix)
-
-#     print_route_specs(app)
-
-# def print_route_specs(app):
-#     infos = []
-#     for resource in app.router._resources:
-#         for route in resource:
-#             method = route.method
-#             formatter = route._resource._formatter
-#             func_name = route._route_spec.handler_func.__qualname__
-#             module_name = route._route_spec.handler_func.__module__
-#             infos.append(f"[{method}]{formatter} => {func_name} in {module_name}")
-
-#     app.logger.info('Route Definition:\n' + '\n'.join(infos) + '\n')
-
 class RouteModules(object):
     """Route definition table for modules"""
 
@@ -136,7 +94,6 @@ class RouteModules(object):
             self._register_module(app, root, prefix)
 
 
-    # def print_route_specs(app):
         infos = []
         for resource in app.router._resources:
             for route in resource:
@@ -179,15 +136,8 @@ class RouteModules(object):
 
         for (path_pattern, path_formatter), specs in resources.items():
 
-            # print(path_formatter, path_formatter, specs)
             resource  = DynamicResource(path_pattern, path_formatter)
-            # resource  = DynamicResource(path_pattern)
-            # resource  = DynamicResource(path_pattern, path_formatter)
-            # print(resource)
             app.router.register_resource(resource)
-
-            # print(7777, path_pattern.pattern)
-            # resource = app.router.add_resource(path_pattern.pattern)
 
             for route_spec in specs:
                 for method in route_spec.methods:
