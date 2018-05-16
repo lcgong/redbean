@@ -14,9 +14,11 @@ from .exception import NotSupportedException
 from .handler_response import make_response_writer, make_error_handler
 from .handler_argument import build_argval_getters
 
+from .secure import verifyCRSFToken
+
 def request_handler_factory(route_spec, method):
-    path_signature = route_spec.path_signature
-    path_fields = route_spec.path_fields
+    # path_signature = route_spec.path_signature
+    # path_fields = route_spec.path_fields
     proto = route_spec.proto
     handler_func = route_spec.handler_func
 
@@ -35,7 +37,7 @@ def request_handler_factory(route_spec, method):
         for i in range(n_args):
             try:
                 arguments[param_names[i]] = await arg_getters[i](request)
-            except Exception as exc:
+            except Exception :
                 if errors is None: errors = []
                 errors.append((i, *sys.exc_info()))
 
@@ -62,10 +64,17 @@ def request_handler_factory(route_spec, method):
     if inspect.iscoroutinefunction(handler_func):
         async def _request_handler(request):
 
+            print(request.headers)
+
+            if not verifyCRSFToken(request):
+                errmsg = 'The CSRF token is required'
+                return Response(text=errmsg, status=401, reason='Bad Request')
+
             request._redbean_route_spec = route_spec
 
             arguments, errors = await _arg_values(request)
-            if errors: return _handle_arg_error(errors)
+            if errors: 
+                return _handle_arg_error(errors)
 
             try:
                 return_value = await handler_func(**arguments)
@@ -77,16 +86,20 @@ def request_handler_factory(route_spec, method):
         return _request_handler
 
     elif inspect.isfunction(handler_func):
-        async def _request_handler(request):
-            arguments, errors = await _arg_values(request)
-            try:
-                return_value = handler_func(**arguments)
-            except Exception as exc:
-                return handle_error(request, exc)
+        raise TypeError('only support async function')
+        # async def _request_handler(request):
+        #     arguments, errors = await _arg_values(request)
+        #     try:
+        #         return_value = handler_func(**arguments)
+        #     except Exception as exc:
+        #         return handle_error(request, exc)
 
-            return resp_writer(request, return_value)
+        #     return resp_writer(request, return_value)
 
-        return _request_handler
+        # return _request_handler
+    else:
+        raise TypeError('only support async function')
+        
 
     handler_expr = handler_func.__name__ + str(inspect.signature(handler_func))
     raise NotSupportedException(

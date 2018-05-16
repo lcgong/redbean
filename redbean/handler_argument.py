@@ -1,5 +1,7 @@
 import inspect
 
+import json
+
 import arrow
 from datetime import datetime, date
 
@@ -23,11 +25,12 @@ def build_argval_getters(route_spec):
 
 def _build_argval_getter(route_spec, arg_name):
     arg_spec = inspect.signature(route_spec.handler_func).parameters[arg_name]
-
+    # print(123, arg_name)
     ann_type = arg_spec.annotation
     argval_getter = None
     if ann_type != inspect._empty:
         for getter_factory in _handler_argval_getters[::-1]:
+            # print(3222, getter_factory)
             argval_getter = getter_factory(route_spec, arg_name)
             if argval_getter is not None:
                 break

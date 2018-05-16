@@ -9,6 +9,10 @@ from .route_spec import parse_path, routespec_registry
 
 import aiohttp
 
+class CurrentUser:
+    pass
+    
+
 class DynamicResource(aiohttp.web_urldispatcher.Resource):
 
     def __init__(self, pattern, formatter, *, name=None):
