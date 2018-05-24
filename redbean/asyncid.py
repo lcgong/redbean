@@ -5,11 +5,12 @@ from aioetcd3.client import client as etcd_client
 from aioetcd3.help import range_all, range_prefix
 from aioetcd3.kv import KV
 from aioetcd3 import transaction
+from base64 import b16encode as _b16encode
 
 
 logger = logging.getLogger(__name__)
 
-class AsyncID:
+class AsyncID64:
 
     """ 分布式产生一个64位唯一ID。
 
@@ -46,8 +47,8 @@ class AsyncID:
         self._task = self._loop.create_task(self._run())
 
 
-    async def new(self):
-        """得到一个新序号(整型)"""
+    async def new(self, encoding=None):
+        """Generate a new int ID"""
         
         if not self._ready_event.is_set():
             await self._ready_event.wait()
@@ -55,9 +56,13 @@ class AsyncID:
         timestamp, shard_id = self._timestamp, self._shard_id
         seqnum = await self._inc_seqnum()
 
-        buf = timestamp << 32 | shard_id << 20 | seqnum
+        int_value = timestamp << 32 | shard_id << 20 | seqnum
+        if encoding is None:
+            return int_value
 
-        return buf
+        buffer = int_value.to_bytes(8, byteorder='big')
+        if encoding == 'base16':
+            return _b16encode(buffer).decode('ascii')
 
     def close(self):
         self._loop.call_soon(self._task.cancel())
@@ -217,11 +222,14 @@ class AsyncID:
 
 from datetime import datetime
 from time import time as time_ticks
-import random
+from random import uniform as _rand_uniform
+
+def b16encode_int64(int_value):
+    return _b16encode(int_value.to_bytes(8, byteorder='big')).decode('utf-8')
 
 
 async def _random_nap(retries=0):
-    asyncio.sleep(random.uniform(0.05, 0.3))
+    asyncio.sleep(_rand_uniform(0.05, 0.3))
 
 def _make_timestamp():
     return int(datetime.utcnow().timestamp())
@@ -234,7 +242,7 @@ def _task_idle_ticks(seconds_per_cycle):
         yield max(t - time_ticks(), 0)
 
 
-__all__ = ["AsyncID"]
+__all__ = ['AsyncID64']
 
 # loop.run_forever()
 # loop.close()

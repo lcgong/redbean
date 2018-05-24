@@ -2,16 +2,13 @@ import asyncio
 import pytest
 
 
-from redbean.asyncid import AsyncID
+from redbean.asyncid import AsyncID64
 
 endpoint = "127.0.0.1:2379"
 
 
-from base64 import b16encode
 from random import uniform as rand_uniform
 
-def base16(int_value):
-    return b16encode(int_value.to_bytes(8, byteorder='big')).decode('utf-8')
 
 # @pytest.mark.asyncio
 # async def test_some_asyncio_code(event_loop):
@@ -40,19 +37,17 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s')
 
-    user_sn_gen1 = AsyncID(endpoint, 'user_sn', max_sequence=12)
-    user_sn_gen2 = AsyncID(endpoint, 'user_sn', max_sequence=12)
-
-    async def func(id, seqnum):
+    async def func(id, seqno):
         while True:
-            user_sn = await seqnum.new() # 64-bits integer
-            
-            print(f'new#{id}: ', base16(user_sn), user_sn)
-            await asyncio.sleep(rand_uniform(0.3, 1))
+            print(f'new#{id}: ', await seqno.new())
+            print(f'new#{id}: ', await seqno.new(encoding='base16'))
 
+            await asyncio.sleep(rand_uniform(0.3, 1))
 
     loop = asyncio.get_event_loop()
 
+    user_sn_gen1 = AsyncID64(endpoint, 'user_sn', max_sequence=12)
+    user_sn_gen2 = AsyncID64(endpoint, 'user_sn', max_sequence=12)
 
     tasks = [
         loop.create_task(func(0, user_sn_gen1)),
