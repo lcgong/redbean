@@ -14,7 +14,7 @@ from .exception import NotSupportedException
 from .handler_response import make_response_writer, make_error_handler
 from .handler_argument import build_argval_getters
 
-from .secure import verifyCRSFToken
+from .secure import checkCRSFToken
 
 def request_handler_factory(route_spec, method):
     # path_signature = route_spec.path_signature
