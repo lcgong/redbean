@@ -19,16 +19,23 @@ class AsyncID64:
     思路：每个进程可以创建一个或多个AsyncID实例，每个AsyncID实例动态租用一个“分片”，
     在其分片(shard)内，同时间戳(timestamp)下，序号(squence)保证唯一。
     
+    :param prefix: 作为etcd目录的路径，例如 /asyncid/user_sn 
+
     """
 
-    def __init__(self, endpoint, name, *, max_sequence=None):
+    def __init__(self, prefix, endpoint, *, max_sequence=None):
+        """
+        """
+
+        assert prefix.startswith('/')
+        assert not prefix.endswith('/')
+        assert len(prefix) > 1
+        self._prefix = prefix
+        self._timestamp_path = self._prefix + '/timestamp'
+        self._shard_path = None
 
         self._client = etcd_client(endpoint)
-        self._name = name
-        self._prefix = f'/genseq/{name}'
         self._shard_ttl = 1 * 10
-
-        self._timestamp_path = self._prefix + '/timestamp'
 
         if max_sequence is None:
             self._max_sequence = 2**20 - 1
@@ -110,7 +117,6 @@ class AsyncID64:
                     raise ValueError(f'全局时间晚于当前时间太长({latency} secs)')
 
             retries += 1
-
         
     async def _get_global_timestamp(self):
         """得到所保存的全局时间戳，如果没有则新存一个"""

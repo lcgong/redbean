@@ -46,8 +46,8 @@ if __name__ == '__main__':
 
     loop = asyncio.get_event_loop()
 
-    user_sn_gen1 = AsyncID64(endpoint, 'user_sn', max_sequence=12)
-    user_sn_gen2 = AsyncID64(endpoint, 'user_sn', max_sequence=12)
+    user_sn_gen1 = AsyncID64('/asyncid/user_sn', endpoint, max_sequence=12)
+    user_sn_gen2 = AsyncID64('/asyncid/user_sn', endpoint, max_sequence=12)
 
     tasks = [
         loop.create_task(func(0, user_sn_gen1)),
