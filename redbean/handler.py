@@ -19,7 +19,8 @@ from .secure import checkCRSFToken
 def request_handler_factory(route_spec, method):
     # path_signature = route_spec.path_signature
     # path_fields = route_spec.path_fields
-    proto = route_spec.proto
+    # proto = route_spec.proto
+    proto = "REST"
     handler_func = route_spec.handler_func
 
     func_sig = inspect.signature(handler_func)
@@ -64,11 +65,11 @@ def request_handler_factory(route_spec, method):
     if inspect.iscoroutinefunction(handler_func):
         async def _request_handler(request):
 
-            print(request.headers)
+            # print(request.headers)
 
-            if not verifyCRSFToken(request):
-                errmsg = 'The CSRF token is required'
-                return Response(text=errmsg, status=401, reason='Bad Request')
+            # if not checkCRSFToken(request):
+            #     errmsg = 'The CSRF token is required'
+            #     return Response(text=errmsg, status=401, reason='Bad Request')
 
             request._redbean_route_spec = route_spec
 
