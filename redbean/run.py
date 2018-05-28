@@ -133,8 +133,6 @@ def run_devserver(**config):
         loop = asyncio.get_event_loop()
 
         config = Config(**active_config)
-        config.import_app_factory()
-
         main_manager = AppTask(config, loop)
 
         try:
