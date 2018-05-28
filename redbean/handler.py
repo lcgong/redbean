@@ -14,7 +14,7 @@ from .exception import NotSupportedException
 from .handler_response import make_response_writer, make_error_handler
 from .handler_argument import build_argval_getters
 
-from .secure import checkCRSFToken
+# from .secure import checkCRSFToken
 
 def request_handler_factory(route_spec, method):
     # path_signature = route_spec.path_signature
@@ -71,6 +71,13 @@ def request_handler_factory(route_spec, method):
             #     errmsg = 'The CSRF token is required'
             #     return Response(text=errmsg, status=401, reason='Bad Request')
 
+            print( route_spec._precondition,  route_spec._postcondition)
+
+            if route_spec._precondition is not None:
+                print(9999)
+                await route_spec._precondition(request)
+                # route_spec._secure.permits(request, route_spec._permissions)
+
             request._redbean_route_spec = route_spec
 
             arguments, errors = await _arg_values(request)
@@ -82,7 +89,12 @@ def request_handler_factory(route_spec, method):
             except Exception as exc:
                 return handle_error(request, exc)
 
-            return resp_writer(request, return_value)
+            if route_spec._postcondition is not None:
+                response = resp_writer(request, return_value)
+                await route_spec._postcondition(request, return_value, response)
+                return response
+            else:
+                return resp_writer(request, return_value)
 
         return _request_handler
 

@@ -17,6 +17,9 @@ loggers:
     test:
         level: DEBUG
         handlers: [console]
+    redbean:
+        level: DEBUG
+        handlers: [console]
     aiohttp.web:
         level: DEBUG
         handlers: [console]
