@@ -10,6 +10,8 @@ from base64 import b16encode as _b16encode
 
 logger = logging.getLogger(__name__)
 
+# import threading
+
 class AsyncID64:
 
     """ 分布式产生一个64位唯一ID。
@@ -23,9 +25,16 @@ class AsyncID64:
 
     """
 
-    def __init__(self, prefix, endpoint, *, max_sequence=None):
+    def __init__(self, prefix, endpoint, *, shard_ttl=14400, max_sequence=None):
         """
         """
+        # import inspect
+        # import traceback
+        # current_frame = inspect.currentframe()
+        # traceback.print_stack(f=current_frame)
+        # logger.error(1)
+
+        # print('thread-id:', threading.get_ident())
 
         assert prefix.startswith('/')
         assert not prefix.endswith('/')
@@ -35,7 +44,7 @@ class AsyncID64:
         self._shard_path = None
 
         self._client = etcd_client(endpoint)
-        self._shard_ttl = 1 * 10
+        self._shard_ttl = shard_ttl
 
         if max_sequence is None:
             self._max_sequence = 2**20 - 1
@@ -73,6 +82,28 @@ class AsyncID64:
 
     def close(self):
         self._loop.call_soon(self._task.cancel())
+
+    async def _run(self):
+        """后台任务更新时间戳和重置序号"""
+
+        # print('thread-id:', threading.get_ident())
+
+        try:
+            await self._lease_shard()
+            await self._check_timestamp()
+
+            self._ready_event.set()
+        
+            tick_gen = _task_idle_ticks(0.3*self._shard_ttl)
+            while True:
+                await asyncio.sleep(next(tick_gen))
+                await self._keepalive_shard()
+                await self._check_timestamp()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+
+        except Exception:
+            logger.error('Caught Exception', exc_info=True)
 
     async def _inc_seqnum(self):
         with await self._lock:
@@ -157,26 +188,6 @@ class AsyncID64:
 
         return is_success
 
-    async def _run(self):
-        """后台任务更新时间戳和重置序号"""
-
-        try:
-            await self._lease_shard()
-            await self._check_timestamp()
-
-            self._ready_event.set()
-        
-            tick_gen = _task_idle_ticks(0.3*self._shard_ttl)
-            while True:
-                await asyncio.sleep(next(tick_gen))
-                await self._keepalive_shard()
-                await self._check_timestamp()
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
-
-        except Exception:
-            logger.error('Caught Exception', exc_info=True)
-
 
     async def _lease_shard(self):
         """ 申请一个新分片，从小到大[0,4095]寻找一个为占用的分片 """
@@ -186,22 +197,23 @@ class AsyncID64:
 
         timestamp_bytes = (0).to_bytes(4, byteorder='big')
 
-
         retries = 0
         while True:
             shard_subidx = len(prefix)
             shard_id = 0
 
+            # 找到未使用的最小分片号
             records = await self._client.range_keys(range_prefix(prefix))
-            print(records)
-            for key, _ in records:
-                shard_num = int(key[shard_subidx:].decode('utf-8'))
-
-                if shard_num > shard_id:
+            nums = sorted(int(k[shard_subidx:].decode('utf-8')) for k, _ in records)
+            for i, n in enumerate(nums):
+                if n > i:
+                    shard_id = i
                     break
-                shard_id += 1
+            else:
+                shard_id = len(nums)
+            # print(nums, shard_id)
+            logger.debug(f'leasing shard_id={shard_id}, retry={retries}')
 
-            assert shard_id <= 4095 # 12bits for shard id
 
             shard_path = prefix + f'{shard_id}'
             is_success, _ = await self._client.txn(compare=[
@@ -217,8 +229,12 @@ class AsyncID64:
                 self._seqnum = None
                 break
             else:
+                logger.debug(f'failed in leasing shard: retry {retries}')
                 await _random_nap(retries)
                 retries += 1
+
+                if retries > 10:
+                    raise ValueError('out of retries')
 
     async def _keepalive_shard(self):
         lease = await self._client.refresh_lease(self._lease)
@@ -235,7 +251,7 @@ def b16encode_int64(int_value):
 
 
 async def _random_nap(retries=0):
-    asyncio.sleep(_rand_uniform(0.05, 0.3))
+    asyncio.sleep(_rand_uniform(0.2, 0.6))
 
 def _make_timestamp():
     return int(datetime.utcnow().timestamp())
