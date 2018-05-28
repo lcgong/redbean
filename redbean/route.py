@@ -66,6 +66,13 @@ class RouteSpec():
         self.query_fields = None
         self.post_fields = None
 
+        self._permissions = None
+        self._session_exit = None
+        self._session_enter = None
+        self._secure = None
+
+        self._precondition = None
+        self._postcondition = None
 
     def __repr__(self):
         return (f"<RouteSpec '{self.path}' "
@@ -73,16 +80,46 @@ class RouteSpec():
                 f"in '{self.handler_func.__module__}'>")
 
 
+from .secure.secure import AccessCotrol
+
 class RESTfulModules():
 
     def __init__(self, prefix):
 
         self._spec_max_no = 0
 
+        self._secure = AccessCotrol()
+
         self._handlers = {}
 
         self._module_prefix = prefix if prefix else {}
         self._module_paths = self._module_prefix
+
+        self._guarded_handlers = {}
+        self._session_enter_handlers = []
+        self._session_exit_handlers = []
+
+
+    def session_enter(self, handler):
+        self._session_enter_handlers.append(handler)
+        return handler
+
+    def session_exit(self, handler):
+        self._session_exit_handlers.append(handler)
+        return handler
+        
+    def guarded(self, *permissions):
+        def decorator(handler):
+
+            if handler not in self._guarded_handlers:
+                self._guarded_handlers[handler] = list(permissions)
+            else:
+                self._guarded_handlers[handler] += permissions
+
+            return handler
+
+        return decorator
+
         
     def __getattr__(self, method):
         return RouteMethodDecorator(self)._add_method(method)
@@ -97,19 +134,49 @@ class RESTfulModules():
             for module in _iter_submodules(module_name):
                 app.logger.debug('dynamic loaded module: ' + module.__name__)
 
+        for handler, permissions in self._guarded_handlers.items():
+            specs = self._handlers.get(handler)
+            if not specs:
+                raise SyntaxError('its not rest handler: ' + handler.__qualname__)
+
+            for spec in specs:
+                assert spec._permissions is None
+                spec._permissions = permissions
+                spec._secure = self._secure
+
+        for handler in self._session_enter_handlers:
+            specs = self._handlers.get(handler)
+            if not specs:
+                raise SyntaxError('its not rest handler: ' + handler.__qualname__)
+
+            for spec in specs:
+                spec._session_enter = True
+                spec._secure = self._secure
+
+        for handler in self._session_exit_handlers:
+            specs = self._handlers.get(handler)
+            if not specs:
+                raise SyntaxError('its not rest handler: ' + handler.__qualname__)
+            for spec in specs:
+                spec._session_exit = True
+                spec._secure = self._secure
+
         specs = []
         for spec in self._handlers.values():
             specs += spec
         specs = sorted(specs, key=lambda s : s._spec_no) # 按出现顺序排序
 
         for spec in specs:
+            spec._precondition = _precondition_factory(spec)
+            spec._postcondition = _postcondition_factory(spec)
+
             resource  = DynamicResource(spec.path_pattern, spec.path_formatter)
             app.router.register_resource(resource)
 
             for method in spec.methods:
                 handler = request_handler_factory(spec, method)
                 route = resource.add_route(method, handler)
-                setattr(route, '_route_spec', spec)     
+                setattr(route, '_route_spec', spec)
 
         infos = []
         for resource in app.router._resources:
@@ -126,6 +193,30 @@ class RESTfulModules():
         self._spec_max_no += 1
         return self._spec_max_no
 
+def _precondition_factory(spec):
+    if spec._permissions is None and not spec._session_exit:
+        return None
+
+    async def filter(request):
+        if spec._permissions is not None:
+            await spec._secure.permits(request, spec._permissions)
+
+        if spec._session_exit:
+            print('session exit')
+
+    return filter
+
+import json
+
+def _postcondition_factory(spec, session_enter=False):
+
+    if spec._session_enter:
+        async def filter(request, return_value, response):
+            print('session enter: ' + json.dumps(return_value))
+
+        return filter
+
+    return None
 
 class RouteMethodDecorator():
     """ 
