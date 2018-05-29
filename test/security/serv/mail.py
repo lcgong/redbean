@@ -5,6 +5,9 @@
 from email.utils import parseaddr, formataddr
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 import smtplib
 import email
 
@@ -43,10 +46,9 @@ async def sendmail():
 
 class EMailMessage:
     
-    def __init__(self, host, user, passwd, port=587, ssl=True):
+    def __init__(self, host, user, passwd, port=25):
         self._host = host
         self._port = port
-        self._ssl = ssl
         self._user = user
         self._passwd = passwd
 
@@ -100,14 +102,18 @@ class EMailMessage:
         if self._html:
             msg.attach(MIMEText(self._html, 'html', 'utf-8'))
 
-        # print(msg.as_string())
-        if self._ssl:
-            smtp = smtplib.SMTP_SSL(self._host, self._port)
-        else:
-            smtp = smtplib.SMTP(self._host, self._port)
-        # smtp.set_debuglevel(1)
-        smtp.login(self._user, self._passwd)
+        class MySMTP(smtplib.SMTP):
+            def _print_debug(self, *args):
+                logger.debug(' '.join(list(str(s) for s in args)))
 
+        smtp = MySMTP(self._host, self._port)
+        if logger.isEnabledFor(logging.DEBUG):
+            smtp.set_debuglevel(1)
+
+        # assert smtp.has_extn("starttls")
+        # smtp.ehlo()
+        smtp.starttls() # 启用加密通道
+        smtp.login(self._user, self._passwd)
         smtp.sendmail(self._from, [self._to_addr], msg.as_string())
         smtp.quit()
 
@@ -129,6 +135,7 @@ import asyncio
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(sendmail())
