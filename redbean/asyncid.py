@@ -12,6 +12,38 @@ logger = logging.getLogger(__name__)
 
 # import threading
 
+class StoppedException(Exception):
+    pass
+
+# TODO 确保得到中断异常后能够正常退出
+
+class InterruptibleSleep:
+    """  允许中断的sleep """
+
+    def __init__(self, seconds, *, result=None, loop=None):
+        self._seconds = seconds
+
+        if loop is None:
+            loop = asyncio.get_event_loop()
+
+        future = loop.create_future()
+
+        def _set_result():
+            if future.done() or future.cancelled():
+                return
+            
+            future.set_result(result)
+
+        loop.call_later(seconds, _set_result)
+        self._future = future
+
+
+    def cancel(self):
+        self._future.cancel()
+    
+    async def wait(self):
+        return await self._future
+
 class AsyncID64:
 
     """ 分布式产生一个64位唯一ID。
@@ -56,23 +88,29 @@ class AsyncID64:
         self._shard_id = None
         self._seqnum = None
 
-        self._lock = asyncio.Lock()
-        self._ready_event = asyncio.Event() # 表示后台程序是否启动完毕
+        self._ready_event = None
+        self._is_running = False
+        self._sleeping = None
 
-        self._loop = asyncio.get_event_loop()
-        self._task = self._loop.create_task(self._run())
-
+        self._task = None
 
     async def new(self, encoding=None):
-        """Generate a new int ID"""
-        
-        if not self._ready_event.is_set():
-            await self._ready_event.wait()
 
-        timestamp, shard_id = self._timestamp, self._shard_id
-        seqnum = await self._inc_seqnum()
+        if self._ready_event is None:
+            self.start() # 自动启动服务
 
-        int_value = timestamp << 32 | shard_id << 20 | seqnum
+        seqnum = None
+        while await self._ready_event.wait(): # 等待序号计数进入就绪状态
+            if self._seqnum >= self._max_sequence:
+                self._renew()
+                continue
+
+            with await self._lock:
+                seqnum = self._seqnum
+                self._seqnum += 1
+            break
+
+        int_value = (self._timestamp << 32) | (self._shard_id << 20) | seqnum
         if encoding is None:
             return int_value
 
@@ -80,113 +118,120 @@ class AsyncID64:
         if encoding == 'base16':
             return _b16encode(buffer).decode('ascii')
 
-    def close(self):
-        self._loop.call_soon(self._task.cancel())
+
+    def start(self):
+        self._ready_event = asyncio.Event() # 表示后台程序是否启动完毕
+        
+        self._lock = asyncio.Lock()
+
+        loop = asyncio.get_event_loop()
+        self._task = loop.create_task(self._run())
+
+    def stop(self):
+        """ """
+        logger.debug(f'stopping shard {self._shard_id}')
+        
+        if self._sleeping is not None:
+            self._sleeping.cancel()
+        
+        self._is_running = False
+
+
+    def _renew(self):
+        if self._sleeping is not None:
+            self._sleeping.cancel()
+        self._ready_event.clear()
 
     async def _run(self):
         """后台任务更新时间戳和重置序号"""
 
-        # print('thread-id:', threading.get_ident())
-
+        tick_gen = _task_idle_ticks(0.3*self._shard_ttl)
+        self._is_running = True
         try:
             await self._lease_shard()
-            await self._check_timestamp()
+            while self._is_running:
 
-            self._ready_event.set()
-        
-            tick_gen = _task_idle_ticks(0.3*self._shard_ttl)
-            while True:
-                await asyncio.sleep(next(tick_gen))
+                self._ready_event.clear()
+                await self._renew_timestamp()
                 await self._keepalive_shard()
-                await self._check_timestamp()
-        except (KeyboardInterrupt, asyncio.CancelledError):
+                self._ready_event.set()
+
+
+                self._sleeping = InterruptibleSleep(next(tick_gen))
+                try:
+                    await self._sleeping.wait()
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    self._sleeping = None
+
+        except asyncio.CancelledError:
             pass
 
         except Exception:
-            logger.error('Caught Exception', exc_info=True)
+            logger.error(f'Error in {self._shard_id} shard:', exc_info=True)
 
-    async def _inc_seqnum(self):
-        with await self._lock:
-            seqnum = self._seqnum
-            self._seqnum += 1
+        finally:
+            self._ready_event.clear()
+            await self._lease.revoke() # 取消租约
+            logger.debug(f'revoked the lease {self._shard_id} shard')
 
-            if self._seqnum > self._max_sequence: # 序号超过范围，使用新时间戳重新计数
-                await self._check_timestamp()
-
-        return seqnum
-
-    async def _check_timestamp(self):
+    async def _renew_timestamp(self):
         retries = 0
+        # 重新设置序号计数的时间戳
         while True:
-            global_timestamp = await self._get_global_timestamp()
-            local_timestamp = _make_timestamp()  
-
-            if global_timestamp <= local_timestamp:
-                if self._timestamp:
-                    duration = local_timestamp - self._timestamp
-                    if self._seqnum < self._max_sequence and duration < 86400:
-                        break
-
-                # 只要序号达到最大范围或者时间戳使用超过一天，就更新时间戳强制重新计数
-                if await self._update_timestamp(local_timestamp):
-                    # 成功更新时间戳，重新计数
-                    self._timestamp = local_timestamp
-                    self._seqnum = 0
-                    break
-                else:
-                    # 更新失败，或许其它分片刚同时更新成功，随机休息片刻再次重试
-                    await _random_nap()
-                    continue
+            # print('checking')
+            local_timestamp = _make_timestamp()
+            latency = await self._update_timestamp(local_timestamp)
+            if latency == 0:
+                # 成功更新时间戳，重新计数
+                self._timestamp = local_timestamp
+                self._seqnum = 0
+                return True
             else:
-                # 本地最新时间早于全局时间记录，一般由于时间设置问题或误差
-                latency = global_timestamp - local_timestamp 
-                if latency < 30: 
+                # 更新失败，或许其它分片刚同时更新成功，随机休息片刻再次重试
+                if latency < 10: 
                     # 在30秒之内就等待一会儿再尝试，如果太长则可能存在系统时间设置问题
-                    await asyncio.sleep(latency + 1)
+                    logger.debug(f'latency, sleep {latency} secs')
+
+                    try:
+                        self._sleeping = InterruptibleSleep(latency)
+                        await self._sleeping.wait()
+                    except asyncio.CancelledError:
+                        raise
+                    finally:
+                        self._sleeping = None
+                                            
+                    # await asyncio.sleep(latency)
                     continue
                 else:
                     raise ValueError(f'全局时间晚于当前时间太长({latency} secs)')
 
             retries += 1
         
-    async def _get_global_timestamp(self):
-        """得到所保存的全局时间戳，如果没有则新存一个"""
-        value, _ = await self._client.get(self._timestamp_path)
-        if value:
-            return int.from_bytes(value, byteorder='big')
+    async def _update_timestamp(self, local_timestamp):
 
-        timestamp = 0 # as default value
-        timestamp_bytes = timestamp.to_bytes(4, byteorder='big')
+        timestamp_bytes = local_timestamp.to_bytes(4, byteorder='big')
 
-        is_success, response = await self._client.txn(compare=[
-                transaction.Version( self._timestamp_path) == 0 
-            ], success=[
-                KV.put.txn(self._timestamp_path, timestamp_bytes)
-            ], fail=[
-                KV.get.txn(self._timestamp_path)
-            ])
-        
-        if is_success:
-            return timestamp
-        else:
-            # 创建同时刚刚由其它创建成功
-            value, _ = response[0]
-            assert value is not None
-            return int.from_bytes(value, byteorder='big')
-
-    async def _update_timestamp(self, timestamp):
-
-        timestamp_bytes = timestamp.to_bytes(4, byteorder='big')
-
-        is_success, _ = await self._client.txn(compare=[
-                transaction.Value(self._timestamp_path) < timestamp_bytes,
+        is_success, responses = await self._client.txn(compare=[
                 transaction.Value(self._shard_path) < timestamp_bytes,
             ], success=[
-                KV.put.txn(self._timestamp_path, timestamp_bytes),
-                KV.put.txn(self._shard_path, timestamp_bytes, lease=self._lease)
+                KV.put.txn(self._shard_path, timestamp_bytes, 
+                            prev_kv=True, lease=self._lease)
+            ], fail=[
+                KV.get.txn(self._shard_path)
             ])
-
-        return is_success
+        if not is_success:
+            assert responses[0][0] is not None
+            remote_timestamp = int.from_bytes(responses[0][0], byteorder='big')
+            latency = remote_timestamp - local_timestamp
+            assert latency >= 0, f'latency: {latency}'
+            if latency == 0:
+                latency = 1
+            
+            return latency
+        else:
+            return 0
 
 
     async def _lease_shard(self):
@@ -251,7 +296,7 @@ def b16encode_int64(int_value):
 
 
 async def _random_nap(retries=0):
-    asyncio.sleep(_rand_uniform(0.2, 0.6))
+    asyncio.sleep(_rand_uniform(0.1, 0.3))
 
 def _make_timestamp():
     return int(datetime.utcnow().timestamp())

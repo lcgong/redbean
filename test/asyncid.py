@@ -14,40 +14,31 @@ from random import uniform as rand_uniform
 # async def test_some_asyncio_code(event_loop):
 #     print(123, event_loop)
 
-#     user_sn_gen = AsyncID(endpoint, 'user_sn')
-
-#     async def func(id, seqnum):
-#         while True:
-#             user_sn = await seqnum.new() # 64-bits integer
-#             print(f'new#{id}: ', base16(user_sn), user_sn)
-#             await asyncio.sleep(rand_uniform(0.3, 1))
-
-
-#     event_loop.create_task(func(0, user_sn_gen))
-#     await asyncio.sleep(30)
-
-#     user_sn_gen.close()
-    
-#     # res = await library.do_something()
-#     # assert b'expected result' == res
-
+import threading
+import logging
+logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
-    import logging
+
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s')
+    import signal
 
+    from aiohttp.web_runner import GracefulExit
+    
     async def func(id, seqno):
-        while True:
-            print(f'new#{id}: ', await seqno.new())
-            print(f'new#{id}: ', await seqno.new(encoding='base16'))
+        # logger = logging.getLogger(__name__)
 
-            await asyncio.sleep(rand_uniform(0.3, 1))
+        while True:
+            seqid = await seqno.new(encoding='base16')
+            logger.info(f'new ID: {seqid}')
+            await asyncio.sleep(rand_uniform(0.05, 0.2))
+
 
     loop = asyncio.get_event_loop()
 
-    user_sn_gen1 = AsyncID64('/asyncid/user_sn', endpoint, max_sequence=12)
-    user_sn_gen2 = AsyncID64('/asyncid/user_sn', endpoint, max_sequence=12)
+    user_sn_gen1 = AsyncID64('/asyncid/user_sn', endpoint, shard_ttl=30, max_sequence=10)
+    user_sn_gen2 = AsyncID64('/asyncid/user_sn', endpoint, shard_ttl=30, max_sequence=10)
 
     tasks = [
         loop.create_task(func(0, user_sn_gen1)),
@@ -56,18 +47,28 @@ if __name__ == '__main__':
         loop.create_task(func(3, user_sn_gen2)),
     ]
 
-    async def empty():
-        pass
+    def _raise_graceful_exit():
+        print('Signal received')
+        try:
+            user_sn_gen1.stop()
+            user_sn_gen2.stop()
 
+            for t in tasks: t.cancel()
+
+        except Exception:
+            logger.error('graceful exit: ', exc_info=True)
+                
+        raise GracefulExit()
+
+    loop.add_signal_handler(signal.SIGTERM, _raise_graceful_exit)
+    loop.add_signal_handler(signal.SIGINT, _raise_graceful_exit)
 
     try:
         loop.run_forever()
-    except KeyboardInterrupt:
-        for task in asyncio.Task.all_tasks():
-            task.cancel()
-        
+    except GracefulExit:
+        pass
     finally:
-        loop.run_until_complete(asyncio.wait(asyncio.Task.all_tasks()))            
-
-
+        logger.debug('Waiting for all of tasks are complete before exiting')
+        loop.run_until_complete(asyncio.wait(asyncio.Task.all_tasks())) 
+        logger.debug('DONE.')
         loop.close()
