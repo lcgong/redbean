@@ -126,6 +126,14 @@ class AsyncID64:
         
         self._is_running = False
 
+    async def stopped(self):
+        stopped = asyncio.Event()
+
+        if not self._task.done():
+            self._task.add_done_callback(lambda task: stopped.set())
+            await stopped.wait()
+
+        return self._task.result()
 
     def _fire_renew_timestamp(self):
         if self._sleeping is not None:

@@ -69,6 +69,11 @@ if __name__ == '__main__':
         pass
     finally:
         logger.debug('Waiting for all of tasks are complete before exiting')
+        loop.run_until_complete(asyncio.gather(
+                                            user_sn_gen1.stopped(), 
+                                            user_sn_gen2.stopped()))
+        logger.debug('ASyncID stopped')
+
         loop.run_until_complete(asyncio.wait(asyncio.Task.all_tasks())) 
         logger.debug('DONE.')
         loop.close()
