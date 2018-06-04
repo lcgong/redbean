@@ -27,18 +27,18 @@ if __name__ == '__main__':
     from aiohttp.web_runner import GracefulExit
     
     async def func(id, seqno):
-        # logger = logging.getLogger(__name__)
-
         while True:
             seqid = await seqno.new(encoding='base16')
             logger.info(f'new ID: {seqid}')
-            await asyncio.sleep(rand_uniform(0.05, 0.2))
+            await asyncio.sleep(rand_uniform(0.1, 0.2))
 
 
     loop = asyncio.get_event_loop()
 
-    user_sn_gen1 = AsyncID64('/asyncid/user_sn', endpoint, shard_ttl=30, max_sequence=10)
-    user_sn_gen2 = AsyncID64('/asyncid/user_sn', endpoint, shard_ttl=30, max_sequence=10)
+    user_sn_gen1 = AsyncID64('/asyncid/user_sn', endpoint, 
+                                shard_ttl=30, max_sequence=10)
+    user_sn_gen2 = AsyncID64('/asyncid/user_sn', endpoint, 
+                                shard_ttl=30, max_sequence=10)
 
     tasks = [
         loop.create_task(func(0, user_sn_gen1)),

@@ -60,20 +60,10 @@ class AsyncID64:
     def __init__(self, prefix, endpoint, *, shard_ttl=14400, max_sequence=None):
         """
         """
-        # import inspect
-        # import traceback
-        # current_frame = inspect.currentframe()
-        # traceback.print_stack(f=current_frame)
-        # logger.error(1)
-
-        # print('thread-id:', threading.get_ident())
-
         assert prefix.startswith('/')
         assert not prefix.endswith('/')
         assert len(prefix) > 1
         self._prefix = prefix
-        self._timestamp_path = self._prefix + '/timestamp'
-        self._shard_path = None
 
         self._client = etcd_client(endpoint)
         self._shard_ttl = shard_ttl
@@ -102,7 +92,7 @@ class AsyncID64:
         seqnum = None
         while await self._ready_event.wait(): # 等待序号计数进入就绪状态
             if self._seqnum >= self._max_sequence:
-                self._renew()
+                self._fire_renew_timestamp()
                 continue
 
             with await self._lock:
@@ -137,7 +127,7 @@ class AsyncID64:
         self._is_running = False
 
 
-    def _renew(self):
+    def _fire_renew_timestamp(self):
         if self._sleeping is not None:
             self._sleeping.cancel()
         self._ready_event.clear()
@@ -145,7 +135,7 @@ class AsyncID64:
     async def _run(self):
         """后台任务更新时间戳和重置序号"""
 
-        tick_gen = _task_idle_ticks(0.3*self._shard_ttl)
+        tick_gen = _task_idle_ticks(0.5*self._shard_ttl)
         self._is_running = True
         try:
             await self._lease_shard()
@@ -174,13 +164,12 @@ class AsyncID64:
         finally:
             self._ready_event.clear()
             await self._lease.revoke() # 取消租约
-            logger.debug(f'revoked the lease {self._shard_id} shard')
+            logger.debug(f'revoked the lease of shard {self._shard_id}')
 
     async def _renew_timestamp(self):
         retries = 0
         # 重新设置序号计数的时间戳
         while True:
-            # print('checking')
             local_timestamp = _make_timestamp()
             latency = await self._update_timestamp(local_timestamp)
             if latency == 0:
@@ -192,7 +181,7 @@ class AsyncID64:
                 # 更新失败，或许其它分片刚同时更新成功，随机休息片刻再次重试
                 if latency < 10: 
                     # 在30秒之内就等待一会儿再尝试，如果太长则可能存在系统时间设置问题
-                    logger.debug(f'latency, sleep {latency} secs')
+                    logger.debug(f'latency, sleep {latency} secs at shard {self._shard_id}')
 
                     try:
                         self._sleeping = InterruptibleSleep(latency)
@@ -202,7 +191,6 @@ class AsyncID64:
                     finally:
                         self._sleeping = None
                                             
-                    # await asyncio.sleep(latency)
                     continue
                 else:
                     raise ValueError(f'全局时间晚于当前时间太长({latency} secs)')
@@ -211,17 +199,32 @@ class AsyncID64:
         
     async def _update_timestamp(self, local_timestamp):
 
+        timestamp_path = f'{self._prefix}/timestamp/{self._shard_id}'
+
         timestamp_bytes = local_timestamp.to_bytes(4, byteorder='big')
 
         is_success, responses = await self._client.txn(compare=[
-                transaction.Value(self._shard_path) < timestamp_bytes,
+                transaction.Value(timestamp_path) < timestamp_bytes,
             ], success=[
-                KV.put.txn(self._shard_path, timestamp_bytes, 
-                            prev_kv=True, lease=self._lease)
+                KV.put.txn(timestamp_path, timestamp_bytes, prev_kv=True)
             ], fail=[
-                KV.get.txn(self._shard_path)
+                KV.get.txn(timestamp_path)
             ])
-        if not is_success:
+        if is_success:
+            return 0
+        
+        if responses[0][0] is None: # 
+            is_success, _ = await self._client.txn(compare=[
+                    transaction.Version(timestamp_path) == 0,
+                ], success=[
+                    KV.put.txn(timestamp_path, timestamp_bytes)
+                ])
+            
+            if is_success:
+                return 0
+            
+            raise ValueError()
+        else:
             assert responses[0][0] is not None
             remote_timestamp = int.from_bytes(responses[0][0], byteorder='big')
             latency = remote_timestamp - local_timestamp
@@ -230,8 +233,6 @@ class AsyncID64:
                 latency = 1
             
             return latency
-        else:
-            return 0
 
 
     async def _lease_shard(self):
@@ -256,11 +257,10 @@ class AsyncID64:
                     break
             else:
                 shard_id = len(nums)
-            # print(nums, shard_id)
+
             logger.debug(f'leasing shard_id={shard_id}, retry={retries}')
 
-
-            shard_path = prefix + f'{shard_id}'
+            shard_path = f'{self._prefix}/shards/{shard_id}'
             is_success, _ = await self._client.txn(compare=[
                     transaction.Version(shard_path) == 0 
                 ], success=[
@@ -269,7 +269,6 @@ class AsyncID64:
 
             if is_success:
                 self._shard_id = shard_id
-                self._shard_path = shard_path
                 self._timestamp = None
                 self._seqnum = None
                 break
@@ -284,8 +283,9 @@ class AsyncID64:
     async def _keepalive_shard(self):
         lease = await self._client.refresh_lease(self._lease)
         self._lease = lease
-        logger.debug(f'keepalive: {self._shard_path} ttl={lease.ttl}')
 
+        shard_path = f'{self._prefix}/shards/{self._shard_id}'
+        logger.debug(f'keepalive: {shard_path} ttl={lease.ttl}')
 
 from datetime import datetime
 from time import time as time_ticks
@@ -293,7 +293,6 @@ from random import uniform as _rand_uniform
 
 def b16encode_int64(int_value):
     return _b16encode(int_value.to_bytes(8, byteorder='big')).decode('utf-8')
-
 
 async def _random_nap(retries=0):
     asyncio.sleep(_rand_uniform(0.1, 0.3))
@@ -310,11 +309,3 @@ def _task_idle_ticks(seconds_per_cycle):
 
 
 __all__ = ['AsyncID64']
-
-# loop.run_forever()
-# loop.close()
-# # seqnum_user
-
-
-
-
