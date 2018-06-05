@@ -3,11 +3,15 @@ import inspect
 import re
 import sys
 from yarl import URL
-from .handler import request_handler_factory
 from inspect import getmodule
 from importlib import  import_module
 from pkgutil import walk_packages
 import aiohttp
+
+from .handler import request_handler_factory
+
+from .path_params import parse_path, parse_fields
+
 
 class DynamicResource(aiohttp.web_urldispatcher.Resource):
 
@@ -218,6 +222,7 @@ def _postcondition_factory(spec, session_enter=False):
 
     return None
 
+
 class RouteMethodDecorator():
     """ 
     
@@ -236,10 +241,15 @@ class RouteMethodDecorator():
 
             spec_no = self._routes._inc_spec_no()
             spec = RouteSpec(spec_no, abspath, self.methods, handler)
-            spec.query_fields = _parse_fields(query_fields)
-            spec.post_fields = _parse_fields(post_fields)
+            spec.query_fields = parse_fields(query_fields)
+            spec.post_fields = parse_fields(post_fields)
 
-            parse_path(spec, abspath)
+            path_pattern, path_sign, path_fields  = parse_path(abspath)
+            spec.path_pattern   = path_pattern
+            spec.path_signature = path_sign
+            spec.path_fields    = path_fields            
+            spec.path_formatter = path_sign.format(*("{"+p+"}" for p in path_fields))
+            
 
             handlers = self._routes._handlers
             if handler not in handlers:
@@ -318,99 +328,3 @@ def _iter_submodules(root_module, recursive=True):
 
         yield module
 
-
-_SPACE_COMMA_SEPERATOR_RE = re.compile(r'\s*[,]?\s*')
-def _parse_fields(expr):
-    if not expr:
-        return []
-
-    if expr and isinstance(expr, str):
-        return list(m for m in _SPACE_COMMA_SEPERATOR_RE.split(expr))
-
-    if isinstance(expr, Sequence):
-        for m in expr:
-            if not isinstance(m, str):
-                raise ValueError(f"unkown type '{m.__class__.__name__}'")
-        return expr
-
-    raise ValueError(f"unknown type {expr} ")
-
-
-_ROUTE_RE = re.compile(r'(\{[_a-zA-Z][^{}]*(?:\{[^{}]*\}[^{}]*)*\})')
-_SOLID_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*)\}')
-_TYPED_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*):(?P<type>\s*(?:int|float|str|path))\s*\}')
-_REGEX_PARAM_RE = re.compile(r'\{(?P<var>[_a-zA-Z][_a-zA-Z0-9]*):(?P<re>.+)\}')
-
-def parse_path(route_spec, pathexpr):
-
-    pattern, signature = '', ''
-
-    fields = []
-    startpos = 0
-    for param_part in _ROUTE_RE.finditer(pathexpr):
-        part = param_part.group(0)
-
-        param_name, param_regex = _parse_pathexpr_part(part)
-        if param_name in fields:
-            raise ValueError(f"duplicated '{{{param_name}}}' in '{pathexpr}'");
-
-        fields.append(param_name)
-
-        norm_part  = _escape_norm_part(pathexpr, startpos, param_part.start())
-        
-        pattern   += norm_part + f'(?P<{param_name}>{param_regex})'
-        signature += norm_part + '{}'
-        startpos = param_part.end()
-
-    norm_part  = _escape_norm_part(pathexpr, startpos, None)
-    pattern   += norm_part
-    signature += norm_part
-
-    try:
-        pattern = re.compile(pattern)
-    except re.error as exc:
-        raise ValueError(
-            "Bad pattern '{}': {}".format(pattern, exc)) from None
-
-    route_spec.path_signature = signature
-    route_spec.path_fields    = fields
-    route_spec.path_pattern   = pattern
-    route_spec.path_formatter = signature.format(*("{"+p+"}" for p in fields))
-
-
-def _parse_pathexpr_part(part):
-    match = _SOLID_PARAM_RE.fullmatch(part)
-    if match:
-        return match.group('var'), r'[^{}/]+'
-
-    match = _TYPED_PARAM_RE.fullmatch(part)
-    if match:
-        param_type = match.group('type')
-        if param_type == 'int':
-            re_expr = r'[+-]?\d+'
-        elif param_type == 'float':
-            re_expr = r'[+-]?\d+(?:\.\d+(?:[eE][+-]?\d+)?)?'
-        elif param_type == 'str':
-            re_expr = r'[^{}/]+'
-        elif param_type == 'path':
-            re_expr = r'[^{}]+'
-        else:
-            raise ValueError(
-                f"Unknown type '{param_type}' in path '{path}'['{part}']"
-            )
-
-        return match.group('var'), re_expr
-
-    match = _REGEX_PARAM_RE.fullmatch(part)
-    if match:
-        return match.group('var'), match.group('re')
-
-    return None, None
-
-def _escape_norm_part(path, startpos, endpos):
-    normal_part = path[startpos:endpos]
-
-    if '{' in normal_part or '}' in normal_part:
-        raise ValueError("Invalid path '{}'['{}']".format(path, normal_part))
-
-    return URL(normal_part).raw_path

@@ -21,6 +21,6 @@ def create_app():
 
     return app
 
-# python -m domainics.run -p 8500 test/security/app.py
+# python -m redbean.run -p 8500 test/security/app.py
 
 

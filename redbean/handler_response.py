@@ -48,7 +48,6 @@ def make_error_handler(proto, method, handler):
     raise HandlerSpecError(f"Unknown '{proto}' for "
                            f"'{handler.__name__}' in {handler.__module__}")
 
-    return _handle_error
 
 
 def _handle_rest_error(request, exc_val):
