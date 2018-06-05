@@ -10,9 +10,7 @@ endpoint = "127.0.0.1:2379"
 from random import uniform as rand_uniform
 
 
-# @pytest.mark.asyncio
-# async def test_some_asyncio_code(event_loop):
-#     print(123, event_loop)
+
 
 import threading
 import logging

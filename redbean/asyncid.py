@@ -1,48 +1,19 @@
 import logging
-import asyncio
-
-from aioetcd3.client import client as etcd_client
-from aioetcd3.help import range_all, range_prefix
-from aioetcd3.kv import KV
-from aioetcd3 import transaction
-from base64 import b16encode as _b16encode
-
-
 logger = logging.getLogger(__name__)
 
-# import threading
+import asyncio
 
-class StoppedException(Exception):
-    pass
+import grpc
+from aioetcd3.client import client as etcd_client
+from aioetcd3.help import range_all, range_prefix
+from aioetcd3 import transaction
+from aioetcd3.kv import KV
 
-# TODO 确保得到中断异常后能够正常退出
+from base64 import b16encode as _b16encode
+from random import uniform as _rand_uniform
 
-class InterruptibleSleep:
-    """  允许中断的sleep """
+from .sleep import InterruptibleSleep
 
-    def __init__(self, seconds, *, result=None, loop=None):
-        self._seconds = seconds
-
-        if loop is None:
-            loop = asyncio.get_event_loop()
-
-        future = loop.create_future()
-
-        def _set_result():
-            if future.done() or future.cancelled():
-                return
-            
-            future.set_result(result)
-
-        loop.call_later(seconds, _set_result)
-        self._future = future
-
-
-    def cancel(self):
-        self._future.cancel()
-    
-    async def wait(self):
-        return await self._future
 
 class AsyncID64:
 
@@ -80,6 +51,7 @@ class AsyncID64:
 
         self._ready_event = None
         self._is_running = False
+        self._is_stopping = False
         self._sleeping = None
 
         self._task = None
@@ -119,6 +91,7 @@ class AsyncID64:
 
     def stop(self):
         """ """
+        self._is_stopping = True
         logger.debug(f'stopping shard {self._shard_id}')
         
         if self._sleeping is not None:
@@ -133,7 +106,11 @@ class AsyncID64:
             self._task.add_done_callback(lambda task: stopped.set())
             await stopped.wait()
 
-        return self._task.result()
+        try:
+            return self._task.result()
+        except grpc.RpcError:
+            logger.error(f"Caught an error in stopping ASyncID[{self._shard_id}]", 
+                        exc_info=True) 
 
     def _fire_renew_timestamp(self):
         if self._sleeping is not None:
@@ -145,23 +122,48 @@ class AsyncID64:
 
         tick_gen = _task_idle_ticks(0.5*self._shard_ttl)
         self._is_running = True
+        self._ready_event.clear()
+        
+        while True:
+            try:
+                await self._lease_shard()
+                break
+            except grpc.RpcError as exc:
+                nap = _rand_uniform(3, 15)
+                logger.warn(f'failed in gRPC [{exc.code()}]: {exc.details()} '
+                            f'. napping {nap:.0f} secs ...')
+
+                if await self._continueAfterSleep(nap):
+                    continue
+                else:
+                    return
+
+        assert self._shard_id is not None           
+               
         try:
-            await self._lease_shard()
             while self._is_running:
 
                 self._ready_event.clear()
-                await self._renew_timestamp()
-                await self._keepalive_shard()
+                try:
+                    await self._renew_timestamp()
+                    await self._keepalive_shard()
+                except grpc.RpcError as exc: 
+                    # exc.code()==grpc.StatusCode.UNAVAILABLE
+                    nap = _rand_uniform(3, 15)
+                    logger.warn(f'failed in grpc[{exc.code()}]: {exc.details()}'
+                                f', napping {nap:.0f}secs ...')
+
+                    if await self._continueAfterSleep(nap):
+                        continue
+                    else:
+                        break
+
                 self._ready_event.set()
 
-
-                self._sleeping = InterruptibleSleep(next(tick_gen))
-                try:
-                    await self._sleeping.wait()
-                except asyncio.CancelledError:
-                    pass
-                finally:
-                    self._sleeping = None
+                if await self._continueAfterSleep(next(tick_gen)):
+                    continue
+                else:
+                    break
 
         except asyncio.CancelledError:
             pass
@@ -173,6 +175,18 @@ class AsyncID64:
             self._ready_event.clear()
             await self._lease.revoke() # 取消租约
             logger.debug(f'revoked the lease of shard {self._shard_id}')
+
+    async def _continueAfterSleep(self, seconds):
+        """ 返回True，可睡醒或被叫醒后继续的；否则，睡醒或被叫醒后，不能继续执行 """
+        assert self._sleeping is None
+        self._sleeping = InterruptibleSleep(seconds)
+        try:
+            await self._sleeping.wait()
+            return True
+        except asyncio.CancelledError:
+            return not self._is_stopping
+        finally:
+            self._sleeping = None        
 
     async def _renew_timestamp(self):
         retries = 0
@@ -297,7 +311,6 @@ class AsyncID64:
 
 from datetime import datetime
 from time import time as time_ticks
-from random import uniform as _rand_uniform
 
 def b16encode_int64(int_value):
     return _b16encode(int_value.to_bytes(8, byteorder='big')).decode('utf-8')
