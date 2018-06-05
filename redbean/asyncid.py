@@ -170,12 +170,12 @@ class AsyncID64:
             pass
 
         except Exception:
-            logger.error(f'Error in {self._shard_id} shard:', exc_info=True)
+            logger.error(f'Error in shard#{self._shard_id}:', exc_info=True)
 
         finally:
             self._ready_event.clear()
             await self._lease.revoke() # 取消租约
-            logger.debug(f'revoked the lease of shard {self._shard_id}')
+            logger.debug(f'shard#{self._shard_id}, the lease revoked')
 
     async def _continueAfterSleep(self, seconds):
         """ 返回True，可睡醒或被叫醒后继续的；否则，睡醒或被叫醒后，不能继续执行 """
@@ -189,7 +189,7 @@ class AsyncID64:
         finally:
             self._sleeping = None        
 
-    async def _renew_timestamp(self):
+    async def _renew_timestamp(self) -> None:
         retries = 0
         # 重新设置序号计数的时间戳
         while True:
@@ -199,7 +199,9 @@ class AsyncID64:
                 # 成功更新时间戳，重新计数
                 self._timestamp = local_timestamp
                 self._seqnum = 0
-                return True
+                logger.debug(f"shard#{self._shard_id}, renew timestamp {self._timestamp}")
+
+                return
             else:
                 # 更新失败，或许其它分片刚同时更新成功，随机休息片刻再次重试
                 if latency < 10: 
@@ -286,7 +288,6 @@ class AsyncID64:
             logger.debug(f'leasing shard#{shard_id}, retry={retries}')
 
             shard_path = f'{self._prefix}/shards/{shard_id}'
-            print(333, shard_path)
             is_success, _ = await self._client.txn(compare=[
                     transaction.Version(shard_path) == 0 
                 ], success=[
@@ -309,9 +310,7 @@ class AsyncID64:
     async def _keepalive_shard(self):
         lease = await self._client.refresh_lease(self._lease)
         self._lease = lease
-
-        shard_path = f'{self._prefix}/shards/{self._shard_id}'
-        logger.debug(f'keepalive: {shard_path} ttl={lease.ttl}')
+        logger.debug(f'shard#{self._shard_id}, keep the lease alive, ttl={lease.ttl}')
 
 
 def int_fromhexbytes(hex_bytes):

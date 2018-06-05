@@ -28,7 +28,7 @@ if __name__ == '__main__':
         while True:
             seqid = await seqno.new(encoding='base16')
             logger.info(f'new ID: {seqid}')
-            # await asyncio.sleep(rand_uniform(0.1, 0.2))
+            await asyncio.sleep(rand_uniform(0.01, 0.1))
 
 
     loop = asyncio.get_event_loop()
