@@ -28,7 +28,7 @@ if __name__ == '__main__':
         while True:
             seqid = await seqno.new(encoding='base16')
             logger.info(f'new ID: {seqid}')
-            await asyncio.sleep(rand_uniform(0.1, 0.2))
+            # await asyncio.sleep(rand_uniform(0.1, 0.2))
 
 
     loop = asyncio.get_event_loop()
@@ -37,12 +37,16 @@ if __name__ == '__main__':
                                 shard_ttl=30, max_sequence=10)
     user_sn_gen2 = AsyncID64('/asyncid/user_sn', endpoint, 
                                 shard_ttl=30, max_sequence=10)
+    user_sn_gen3 = AsyncID64('/asyncid/user_sn', endpoint, 
+                                shard_ttl=30, max_sequence=10)
 
     tasks = [
         loop.create_task(func(0, user_sn_gen1)),
         loop.create_task(func(1, user_sn_gen1)),
         loop.create_task(func(2, user_sn_gen2)),
         loop.create_task(func(3, user_sn_gen2)),
+        loop.create_task(func(4, user_sn_gen3)),
+        loop.create_task(func(5, user_sn_gen3)),
     ]
 
     def _raise_graceful_exit():
@@ -50,7 +54,7 @@ if __name__ == '__main__':
         try:
             user_sn_gen1.stop()
             user_sn_gen2.stop()
-
+            user_sn_gen3.stop()
             for t in tasks: t.cancel()
 
         except Exception:
@@ -69,7 +73,8 @@ if __name__ == '__main__':
         logger.debug('Waiting for all of tasks are complete before exiting')
         loop.run_until_complete(asyncio.gather(
                                             user_sn_gen1.stopped(), 
-                                            user_sn_gen2.stopped()))
+                                            user_sn_gen2.stopped(),
+                                            user_sn_gen3.stopped()))
         logger.debug('ASyncID stopped')
 
         loop.run_until_complete(asyncio.wait(asyncio.Task.all_tasks())) 

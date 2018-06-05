@@ -72,7 +72,8 @@ class AsyncID64:
                 self._seqnum += 1
             break
 
-        int_value = (self._timestamp << 32) | (self._shard_id << 20) | seqnum
+        shard_id = int_fromhexstr(self._shard_id)
+        int_value = (self._timestamp << 32) | (shard_id << 20) | seqnum
         if encoding is None:
             return int_value
 
@@ -272,7 +273,7 @@ class AsyncID64:
 
             # 找到未使用的最小分片号
             records = await self._client.range_keys(range_prefix(prefix))
-            nums = sorted(int(k[shard_subidx:].decode('utf-8')) for k, _ in records)
+            nums = sorted(int_fromhexbytes(k[shard_subidx:]) for k, _ in records)
             for i, n in enumerate(nums):
                 if n > i:
                     shard_id = i
@@ -280,9 +281,12 @@ class AsyncID64:
             else:
                 shard_id = len(nums)
 
-            logger.debug(f'leasing shard_id={shard_id}, retry={retries}')
+            shard_id = int_tohex(shard_id, length=2)
+
+            logger.debug(f'leasing shard#{shard_id}, retry={retries}')
 
             shard_path = f'{self._prefix}/shards/{shard_id}'
+            print(333, shard_path)
             is_success, _ = await self._client.txn(compare=[
                     transaction.Version(shard_path) == 0 
                 ], success=[
@@ -295,7 +299,7 @@ class AsyncID64:
                 self._seqnum = None
                 break
             else:
-                logger.debug(f'failed in leasing shard: retry {retries}')
+                logger.debug(f'failed in leasing shard#{shard_id}: retry {retries}')
                 await _random_nap(retries)
                 retries += 1
 
@@ -308,6 +312,16 @@ class AsyncID64:
 
         shard_path = f'{self._prefix}/shards/{self._shard_id}'
         logger.debug(f'keepalive: {shard_path} ttl={lease.ttl}')
+
+
+def int_fromhexbytes(hex_bytes):
+    return int.from_bytes(bytes.fromhex(hex_bytes.decode('ascii')), byteorder='big')
+
+def int_fromhexstr(hex_str):
+    return int.from_bytes(bytes.fromhex(hex_str), byteorder='big')
+
+def int_tohex(int_value: int, length):
+    return bytes.hex((int_value).to_bytes(length, byteorder='big'))
 
 from datetime import datetime
 from time import time as time_ticks
