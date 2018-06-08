@@ -10,7 +10,7 @@ rest.set_path('../user')
 @rest.guarded('a', 'b')
 @rest.guarded('c')
 async def hi(user_id: int) -> dict:
-    logger.info('hi')
+    logger.info('hi') 
     return {"id": 222*1000 + user_id}
 
 

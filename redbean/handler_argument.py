@@ -1,9 +1,48 @@
 import inspect
 
 import json
-
+import sys
 import arrow
 from datetime import datetime, date
+
+from .exception import RESTfulArgumentError
+
+def argument_getter_factory(route_spec):
+    """ 根据spec来生成handler函数参数值读取器 """ 
+    
+    func_sig = inspect.signature(route_spec.handler_func)
+
+    param_names = list(func_sig.parameters.keys())
+    arg_getters  = build_argval_getters(route_spec)
+    n_args = len(arg_getters)
+
+    async def argument_getters(request):
+        errors = None
+        values = {}
+        for i in range(n_args):
+            try:
+                arg_name = param_names[i]
+                values[arg_name] = await arg_getters[i](request)
+            except Exception as exc :
+                if errors is None: 
+                    errors = []
+
+                exc_type = type(exc)
+
+                data = {
+                    "name": arg_name, 
+                    "type": f"{exc_type.__module__}.{exc_type.__qualname__}",
+                    "error": str(exc)
+                }
+
+                errors.append(data)
+
+        if errors is not None:
+            raise RESTfulArgumentError(data=errors)
+
+        return values
+
+    return argument_getters
 
 
 _handler_argval_getters = []
