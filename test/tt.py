@@ -11,7 +11,6 @@ from yarl import URL
 home_url = URL("http://localhost:8500/api")
 
 
-
 async def create_identity():
     cookie_jar = aiohttp.CookieJar(unsafe=True)
 
@@ -58,6 +57,19 @@ async def check_password():
         async with session.get(url) as resp:
             print('Cookies: ', list(cookie_jar))
             if resp.status >= 400:
+                body = await resp.text()
+                print(333, body)
+                error = json.loads(body)
+                print(resp.status, error)
+            else:
+                print(resp.status, await resp.text())
+
+        url = home_url / 'logout'
+        async with session.post(url) as resp:
+            print('Cookies: ', list(cookie_jar))
+            if resp.status == 200:
+                print('OK: ' + await resp.text())            
+            elif resp.status >= 400:
                 body = await resp.text()
                 print(333, body)
                 error = json.loads(body)

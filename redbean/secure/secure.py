@@ -44,7 +44,7 @@ class SecureLayer:
 
     async def close_session(self, request, identity):
 
-        resp = Response()
+        resp = Response(text="")
         resp.del_cookie(self._cookie_name)
 
         logger.debug(f"close session: {str(identity)}")

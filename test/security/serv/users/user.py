@@ -7,14 +7,10 @@ from redbean.secure.identity import SessionIdentity
 
 rest.set_path('../user')
 
-@rest.get.post('{user_id}/hi')
-@rest.get('{user_id}/hi2')
+@rest.get('{user_id}/hi')
 @rest.guarded('a', 'b')
 @rest.guarded('c')
-async def hi(user_id: int, identity: SessionIdentity) -> dict:
-    logger.info('hi') 
-    logger.debug(f'3333:  {identity}')
-
+async def hi(user_id: int) -> dict:
     return {"id": 222*1000 + user_id}
 
 # @REST.GET('{user_id}/session')

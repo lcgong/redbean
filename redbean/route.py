@@ -7,6 +7,9 @@ import sys
 from yarl import URL
 
 import aiohttp
+from aiohttp.web import Response
+from aiohttp.web_exceptions import HTTPException
+
 from inspect import getmodule
 
 # from .handler import request_handler_factory
@@ -15,7 +18,6 @@ from .path_params import parse_path, parse_fields
 from .route_spec import RouteMethodDecorator
 from .secure.secure import SecureLayer
 
-from aiohttp.web_exceptions import HTTPException
 from redbean.exception import RESTfulServerError, RESTfulDeclarationError
 
 class RESTfulModules():
@@ -181,6 +183,9 @@ def handler_factory(route_spec, method, secure_layer):
     async def _request_handler(request):
         try:
             ret_val = await _service_handler(request)
+            if isinstance(ret_val, Response):
+                return ret_val
+            
             return resp_writer(request, ret_val)
         except HTTPException as exc:
             request.app.logger.error(f'HTTP Error: {str(exc)}', exc_info=True)
