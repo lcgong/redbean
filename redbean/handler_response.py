@@ -39,56 +39,6 @@ def make_response_writer(proto, method, handler):
 
     return _default_response_writer
 
-# def make_error_handler(proto, method, handler):
-#     if proto == 'REST':
-#         return _handle_rest_error
-#     elif proto == 'HTTP':
-#         return _handle_http_error
-
-#     raise HandlerSpecError(f"Unknown '{proto}' for "
-#                            f"'{handler.__name__}' in {handler.__module__}")
-
-
-
-# def _handle_rest_error(request, exc_val):
-
-#     if isinstance(exc_val, HTTPException):
-#         status = exc_val.status_code
-#         reason = exc_val.reason
-#         if hasattr(exc_val, 'message'):
-#             errmsg = exc_val.message
-#         else:
-#             errmsg = str(exc_val)
-#     else:
-#         status = 500
-#         reason = "Internal Server Error"
-#         errmsg = str(exc_val)
-
-#     logger.error(exc_val, exc_info=True)
-
-
-#     return json_response({"error":  errmsg}, status=status,
-#                             reason=reason, dumps=json_dumps)
-
-# def _handle_http_error(request, exc_val):
-#     if isinstance(exc_val, HTTPException):
-#         reason = exc_val.reason
-#         status = exc_val.status_code
-#     else:
-#         reason = 'Internal Server Error'
-#         status = 500
-
-#     message = getattr(exc_val, 'message', None)
-
-#     htmltext=(r"<html><head>"
-#               f"<title>{status} {reason}</title>"
-#               r"</head><body>"
-#               f"<h3>{status} {reason}</h3>"
-#               f"<div>{message}</div>"
-#               r"</body></html>")
-
-#     return Response(status=status, reason=reason,
-#                     text=htmltext, content_type='text/html')
 
 
 def _default_response_writer(request, return_value):

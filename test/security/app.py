@@ -16,12 +16,12 @@ from .config import secure_key
 def create_app():
 
     app = aiohttp.web.Application()
+    app['secure_key'] = 'DjwennlKciQiTlxKmYtWqH8N'
+    app['etcd_endpoint'] = "127.0.0.1:2379"
 
     rest.setup(app)
     rest.add_module('test.security.serv', prefix='/api')
     
-    app['secure_key'] = secure_key
-
     return app
 
 # python -m redbean.run -p 8500 test/security/app.py

@@ -15,11 +15,14 @@ from .path_params import parse_path, parse_fields
 from .route_spec import RouteMethodDecorator
 from .secure.secure import SecureLayer
 
+from aiohttp.web_exceptions import HTTPException
+from redbean.exception import RESTfulServerError, RESTfulDeclarationError
+
 class RESTfulModules():
 
     def __init__(self):
 
-        self._secure_layer = SecureLayer()
+        self._secure_layer = None
 
         self._spec_max_no = 0
 
@@ -27,6 +30,8 @@ class RESTfulModules():
 
         self._root_modules = {}
         self._module_paths = None  
+        self._app = None
+        self._on_cleanup_callbacks = None
 
     def prepare_session(self, handler):
         self._secure_layer.add_prepare_session(handler)
@@ -42,6 +47,21 @@ class RESTfulModules():
             return handler
 
         return decorator
+    
+    def permission_verifier(self, verifier_func):
+        """ 标记进行权限检查的函数.
+
+            返回当前用户身份第一个匹配成功的有效权限标签
+        """
+
+        self._secure_layer.set_permission_verifier(verifier_func)
+        return verifier_func
+    
+    def on_cleanup(self, callback):
+        if self._on_cleanup_callbacks is None:
+            self._on_cleanup_callbacks = [callback]
+        else:
+            self._on_cleanup_callbacks.append(callback)
         
     def __getattr__(self, method):
         return RouteMethodDecorator(self)._add_method(method)
@@ -55,48 +75,20 @@ class RESTfulModules():
         self._root_modules[module_name] = prefix
 
     def setup(self, app):
+        self._app = app
+
+        secure_key = app['secure_key']
         self._handlers = {}
-        
+
+        self._secure_layer = SecureLayer(secure_key)
+        app['secure_layer'] = self._secure_layer
 
         app.on_startup.append(self._app_on_start)
         app.on_cleanup.append(self._app_on_cleanup) 
 
-
-        print(8889, self._root_modules)
-        
-
-        # for handler, permissions in self._guarded_handlers.items():
-        #     specs = self._handlers.get(handler)
-        #     if not specs:
-        #         raise SyntaxError('its not rest handler: ' + handler.__qualname__)
-
-        #     for spec in specs:
-        #         assert spec._permissions is None
-        #         spec._permissions = permissions
-        #         spec._secure = self._secure
-
-        # for handler in self._session_enter_handlers:
-        #     specs = self._handlers.get(handler)
-        #     if not specs:
-        #         raise SyntaxError('its not rest handler: ' + handler.__qualname__)
-
-        #     for spec in specs:
-        #         spec._session_enter = True
-        #         spec._secure = self._secure
-
-        # for handler in self._session_exit_handlers:
-        #     specs = self._handlers.get(handler)
-        #     if not specs:
-        #         raise SyntaxError('its not rest handler: ' + handler.__qualname__)
-        #     for spec in specs:
-        #         spec._session_exit = True 
-        #         spec._secure = self._secure 
-
     async def _app_on_start(self, app):
         self._module_paths = self._root_modules.copy()
         deep_load_moduels(sorted(set(self._root_modules.keys())))
-
-        print( self._module_paths )
 
         specs = []
         for spec in self._handlers.values():
@@ -128,6 +120,8 @@ class RESTfulModules():
 
     async def _app_on_cleanup(self, app):
         logger.debug('cleanup routes') 
+        for callback in self._on_cleanup_callbacks:
+            await callback()
                        
     def _inc_spec_no(self):
         self._spec_max_no += 1
@@ -138,19 +132,62 @@ from .handler_response import make_response_writer
 
 def handler_factory(route_spec, method, secure_layer):
 
-    handler_func = route_spec.handler_func
+    handler = route_spec.handler_func
 
-    resp_writer  = make_response_writer("REST", method, handler_func)
+    if secure_layer:
+        permissions = secure_layer._guarded_handlers.get(handler)
+    else:
+        permissions = None
 
-    async def _service_handler(request):
-        arguments = await route_spec._argument_getters(request)
-        return await handler_func(**arguments)    
+    if permissions:
+        permissions = sorted(permissions, key=lambda p : str(p))
+        # 因为设置的所需权限，需配置权限检查器
+        if secure_layer._permission_verifier is None:
+            errmsg = "The hook 'permission_verifier(identity, perms)' is required"
+            raise RESTfulDeclarationError(text=errmsg)
 
-    _secured_handler = secure_layer.decorate(route_spec, _service_handler)
+    if secure_layer and handler in secure_layer._prepare_session_handlers:
+        # 
+        async def _service_handler(request):
+            arguments = await route_spec._argument_getters(request)
+            identity = await handler(**arguments)
 
+            response = await secure_layer.open_session(request, identity)
+            return response
+
+    elif secure_layer and handler in secure_layer._close_session_handlers:
+        # 
+        async def _service_handler(request):
+            identity = await secure_layer.identify(request)
+            if permissions:
+                await secure_layer.verfiy_permissions(request, identity, permissions)
+
+            arguments = await route_spec._argument_getters(request)
+            await handler(**arguments)
+            
+            response = await secure_layer.close_session(request, identity)
+            return response            
+
+    else:
+        async def _service_handler(request):
+            if permissions:
+                identity = await secure_layer.identify(request)
+                await secure_layer.verfiy_permissions(request, identity, permissions)
+    
+            arguments = await route_spec._argument_getters(request)
+            return await handler(**arguments)
+
+    resp_writer  = make_response_writer("REST", method, handler)
     async def _request_handler(request):
-        ret_val = await _secured_handler(request)
-        return resp_writer(request, ret_val)
+        try:
+            ret_val = await _service_handler(request)
+            return resp_writer(request, ret_val)
+        except HTTPException as exc:
+            request.app.logger.error(f'HTTP Error: {str(exc)}', exc_info=True)
+            raise
+        except Exception as exc:
+            request.app.logger.error(f'Internal Error: {str(exc)}', exc_info=True)
+            raise RESTfulServerError(data=dict(error=str(exc))) from exc
 
     return _request_handler
 

@@ -28,52 +28,64 @@ class RESTfulHTTPError(HTTPError):
             else:
                 raise ValueError()
         
-        text = json.dumps(data)
+        if isinstance(data['error'], str):
+            reason = data['error']
+        else:
+            reason = None
         
-        super().__init__(text=text, content_type='application/json')
+        if 'type' not in data:
+            exc_type = type(self)
+            data['type'] = f"{exc_type.__module__}.{exc_type.__qualname__}"
+        
+        text = json.dumps(data)
+        content_type = 'application/json'
+        
+        super().__init__(text=text, reason=reason, content_type=content_type)
 
 
 class RESTfulRequestError(RESTfulHTTPError):
     status_code = 400
-    # def __init__(self, data):
-    #     super().__init__(data=data)
-
 
 class RESTfulArgumentError(RESTfulRequestError):
     
     def __init__(self, errors):
-        # func_sig = inspect.signature(handler_func)
-
-        # param_names= list(func_sig.parameters)
-
-        # errmsg = f"Error in calling "
-        # errmsg += f"'{handler_func.__name__}' in '{handler_func.__module__}' \n"
-        # errmsg +='\n'.join([f"<{i}> {param_names[i]}: {str(exc_val)}"
-        #                         for i, exc_typ, exc_val, traceback in errors])
-
-        # if hasattr(self, 'message'):
-        #     errmsg = exc_val.message
-        # else:
-        #     errmsg = str(exc_val)
-                
         data = {
-            "type": 'RESTfulArgumentError',
             "error": errors
         }
         
         super().__init__(data=data)
 
+class Unauthorized(RESTfulRequestError):
+    status_code = 401
 
-class UnprocessableState(HTTPUnprocessableEntity): # 422
-    """
-    the service handler understands the request but was unable to fulfill the
-    request when some condition or state was not satified
-    """
+    def __init__(self, text=None):
+        super().__init__(text=text)
 
-class Invalidation(UnprocessableState):
-    def __init__(self, message):
-        self.message = message
-        super(Invalidation, self).__init__()
+class Forbidden(RESTfulRequestError):
+    status_code = 403
+    
+    def __init__(self, text=None):
+        super().__init__(text=text)
+
+class NotFound(RESTfulRequestError):
+    status_code = 404
+
+    def __init__(self, text=None):
+        super().__init__(text=text)
+
+class AlreadyExists(RESTfulRequestError):
+    status_code = 409 # Conflict
+
+    def __init__(self, text=None):
+        super().__init__(text=text)
+
+class Unprocessable(RESTfulRequestError):
+    status_code = 422 # UnprocessableState
+    # the service handler understands the request but was unable to fulfill the
+    # request when some condition or state was not satified
+
+    def __init__(self, text):
+        super().__init__(text=text)
 
 
 class RESTfulServerError(RESTfulHTTPError):

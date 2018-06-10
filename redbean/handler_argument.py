@@ -5,6 +5,7 @@ import sys
 import arrow
 from datetime import datetime, date
 
+from aiohttp.web_exceptions import HTTPException
 from .exception import RESTfulArgumentError
 
 def argument_getter_factory(route_spec):
@@ -23,9 +24,13 @@ def argument_getter_factory(route_spec):
             try:
                 arg_name = param_names[i]
                 values[arg_name] = await arg_getters[i](request)
+            except HTTPException:
+                raise
             except Exception as exc :
                 if errors is None: 
                     errors = []
+
+                request.app.logger.error('', exc_info=True)
 
                 exc_type = type(exc)
 
@@ -38,7 +43,7 @@ def argument_getter_factory(route_spec):
                 errors.append(data)
 
         if errors is not None:
-            raise RESTfulArgumentError(data=errors)
+            raise RESTfulArgumentError(errors)
 
         return values
 
@@ -153,6 +158,19 @@ def _json_arg_getter(route_spec, arg_name):
 
     return read_json
 
+def _identity_getter(route_spec, arg_name):
+    if arg_name not in ['identity']:
+        return
+    
+    async def _identify(request):
+        secure_layer = request.app.get('secure_layer')
+        if secure_layer is None:
+            return None
+
+        identity = await secure_layer.identify(request)
+        return identity
+
+    return _identify
 
 def _datetime_value_getter(route_spec, arg_name):
     arg_spec = inspect.signature(route_spec.handler_func).parameters[arg_name]
@@ -184,6 +202,8 @@ def _date_value_getter(route_spec, arg_name):
 
     return getter
 
+
+register_argument_getter(_identity_getter)
 register_argument_getter(_json_arg_getter)
 register_argument_getter(_date_value_getter)
 register_argument_getter(_datetime_value_getter)
