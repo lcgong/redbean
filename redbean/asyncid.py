@@ -92,6 +92,9 @@ class AsyncID64:
 
     def stop(self):
         """ """
+        if self._task is None:
+            return
+                
         self._is_stopping = True
         logger.debug(f'stopping shard {self._shard_id}')
         
@@ -101,6 +104,9 @@ class AsyncID64:
         self._is_running = False
 
     async def stopped(self):
+        if self._task is None:
+            return
+
         stopped = asyncio.Event()
 
         if not self._task.done():
