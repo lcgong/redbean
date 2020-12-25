@@ -1,5 +1,3 @@
 
-from .route import RESTfulModules
 
-
-
+from .web.rest import rest_method

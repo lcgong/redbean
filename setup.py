@@ -1,6 +1,3 @@
-#! /usr/bin/python3
-# -*- coding: utf-8 -*-
-
 from distutils.core import setup
 from setuptools import find_packages
 
@@ -35,7 +32,7 @@ class PyTest(TestCommand):
 
 setup(
     name='redbean',
-    version='0.1.0',
+    version='0.5.0',
     license="BSD",
     description='A tiny web framwork',
     author='Chenggong Lyu',
@@ -44,7 +41,7 @@ setup(
     packages=find_packages("."),
     # package_dir = {"": "."},
     zip_safe = False,
-    install_requires = ["aiohttp>=2.2", "PyYAML>=3.12"],
+    install_requires = ["aiohttp>=3.7"],
     classifiers = [
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",
@@ -54,7 +51,7 @@ setup(
         "Operating System :: Microsoft :: Windows",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
         ],
