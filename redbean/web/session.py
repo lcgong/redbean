@@ -1,11 +1,11 @@
 import time
-import aiohttp
+# import aiohttp
 
 from cryptography.fernet import InvalidToken
 from cryptography import fernet
-from sqlblock.json import json_dumps
-from aiohttp.abc import AbstractStreamWriter
-from typing import Optional
+# from sqlblock.json import json_dumps
+# from aiohttp.abc import AbstractStreamWriter
+# from typing import Optional
 
 from ..exception import UnauthorizedError
 
@@ -20,17 +20,19 @@ SESSION_FERNET = "session_fernet"
 SESSION_FATORY = 'session_factory'
 
 
-def setup_session(app, secret_key, session_factory):
+def secret_factory(secret_key):
+    return fernet.Fernet(secret_key)
 
-    app[SESSION_FERNET] = fernet.Fernet(secret_key)
-    app[SESSION_FATORY] = session_factory
+# def setup_session(app, secret_key, session_factory):
+#     app[SESSION_FERNET] = fernet.Fernet(secret_key)
+#     app[SESSION_FATORY] = session_factory
 
 
 async def get_http_session(request):
 
-    principal = get_secure_cookie(request, SESSION_COOKIE)
-    if principal is None:
-        raise UnauthorizedError(f"Unauthorized user session")
+    # principal = get_secure_cookie(request, SESSION_COOKIE)
+    # if principal is None:
+    #     raise UnauthorizedError(f"Unauthorized user session")
 
     factory = request.app.get(SESSION_FATORY)
     if factory is None:
@@ -38,7 +40,7 @@ async def get_http_session(request):
             "Install user session factory "
             "in your aiohttp.web.Application")
 
-    user_session = await factory(principal)
+    user_session = await factory(request)
     if user_session is None:
         raise UnauthorizedError(f"Unauthorized user session")
 
@@ -50,57 +52,57 @@ async def get_validation_in_cookie(request):
     return get_secure_cookie(request, CONTEXT_COOKIE)
 
 
-class LoginResponse(aiohttp.web.Response):
-    def __init__(self, principal: Optional[str], validation=False,
-                 text: str = None,
-                 body: bytes = None,
-                 status: int = 200,
-                 reason: Optional[str] = None,
-                 content_type: str = None):
+# class LoginResponse(aiohttp.web.Response):
+#     def __init__(self, principal: Optional[str], validation=False,
+#                  text: str = None,
+#                  body: bytes = None,
+#                  status: int = 200,
+#                  reason: Optional[str] = None,
+#                  content_type: str = None):
 
-        self._principal = principal
-        self._validation = validation
+#         self._principal = principal
+#         self._validation = validation
 
-        super().__init__(text=text, body=body,
-                         status=status,
-                         reason=reason,
-                         content_type=content_type)
+#         super().__init__(text=text, body=body,
+#                          status=status,
+#                          reason=reason,
+#                          content_type=content_type)
 
-    async def prepare(
-            self,
-            request: 'BaseRequest'
-    ) -> Optional[AbstractStreamWriter]:
+#     async def prepare(
+#             self,
+#             request: 'BaseRequest'
+#     ) -> Optional[AbstractStreamWriter]:
 
-        set_secure_cookie(request, self,
-                          SESSION_COOKIE, self._principal,
-                          httponly=True)
+#         set_secure_cookie(request, self,
+#                           SESSION_COOKIE, self._principal,
+#                           httponly=True)
 
-        if self._validation:
-            set_secure_cookie(request, self,
-                              CONTEXT_COOKIE, self._principal,
-                              max_age=3600*24*28,
-                              httponly=True)
+#         if self._validation:
+#             set_secure_cookie(request, self,
+#                               CONTEXT_COOKIE, self._principal,
+#                               max_age=3600*24*28,
+#                               httponly=True)
 
-        await super().prepare(request)
+#         await super().prepare(request)
 
 
-class LogoutResponse(aiohttp.web.Response):
-    def __init__(self, validation=False):
+# class LogoutResponse(aiohttp.web.Response):
+#     def __init__(self, validation=False):
 
-        self._validation = validation
-        super().__init__()
+#         self._validation = validation
+#         super().__init__()
 
-    async def prepare(
-            self,
-            request: 'BaseRequest'
-    ) -> Optional[AbstractStreamWriter]:
+#     async def prepare(
+#             self,
+#             request: 'BaseRequest'
+#     ) -> Optional[AbstractStreamWriter]:
 
-        set_secure_cookie(request, self, SESSION_COOKIE, None)
+#         set_secure_cookie(request, self, SESSION_COOKIE, None)
 
-        if self._validation:
-            set_secure_cookie(request, self, CONTEXT_COOKIE, None)
+#         if self._validation:
+#             set_secure_cookie(request, self, CONTEXT_COOKIE, None)
 
-        await super().prepare(request)
+#         await super().prepare(request)
 
 
 def get_secure_cookie(request, name):

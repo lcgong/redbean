@@ -49,7 +49,7 @@ def _json_request_getter(arg_name, arg_spec):
 def build_argument_getters(arguments):
     setters = []
     for arg_name, arg_spec in arguments.items():
-        if arg_name == 'session':
+        if arg_name == 'user_session' or arg_name == 'session':
             async def _setter(request):
                 return await get_http_session(request)
 

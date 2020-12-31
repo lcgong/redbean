@@ -1,65 +1,60 @@
 import logging
-
+import aiohttp.web
 from aiohttp.web_urldispatcher import PlainResource, DynamicResource
 from aiohttp.web_urldispatcher import StaticResource
 
 
 server_log = logging.getLogger('aiohttp.server')
 
-def log_app_routes(app):
+from .session import SESSION_FERNET, SESSION_FATORY, secret_factory
 
-    lines = []
-    for res in app.router.resources():
+class Application(aiohttp.web.Application):
 
-        if isinstance(res, (PlainResource, DynamicResource)):
-            res_info = res.get_info()
-            if 'formatter' in res_info:
-                lines.append(f"==> {res_info['formatter']}")
-            else:
-                lines.append(f"==> {res_info['path']}")
+    def __init__(self, secret_key=None, **kwargs):
+        super().__init__(**kwargs)
+        if secret_key is not None:
+            assert isinstance(secret_key, str)
+            
 
-            for route in res:
-                handler = route.handler
-                s = f'{route.method} at {handler.__module__}.{handler.__name__}'
-                lines.append(' '* 8 + ' + ' + s)
-
-        elif isinstance(res, StaticResource):
-            res_info = res.get_info()
-            print(res, res_info)
-            for route in res:
-                print(route)
-
-    server_log.info("Routes:\n" + '\n'.join(lines))
+    # from configuration import dbconn
+    # from sqlblock.setup import aiohttp_setup_sqlblock
+    # aiohttp_setup_sqlblock(app, dbconn)
 
 
-import importlib
-from pkgutil import walk_packages
+    def setup_session(self, factory=None, secret=None):
+        
+        if secret is not None:
+            assert isinstance(secret, str)
 
-def deep_load_moduels(root_names):
-    for module_name in root_names:
-        for _ in _iter_submodules(module_name):
-            pass  
-           
+            from cryptography import fernet
+            self[SESSION_FERNET] = fernet.Fernet(secret)
 
-def _iter_submodules(module):
-    """  """
-    if isinstance(module, str):
-        # logger.debug('dynamic loading module: ' + module)    
-        module = importlib.import_module(module)
-    
-    if not hasattr(module, '__path__'):
-        yield module
-        return
+        if factory is not None:
+            self[SESSION_FATORY] = factory
 
-    if isinstance(module.__path__, list): # no namespace package
-        yield module
 
-    prefix = module.__name__ + '.'
+    def log_routes(self):
 
-    for loader, module_name, ispkg in walk_packages(module.__path__, prefix):
-        module = loader.find_module(module_name).load_module(module_name)
-        if ispkg and not isinstance(module.__path__, list):
-            continue
+        lines = []
+        for res in self.router.resources():
 
-        yield module
+            if isinstance(res, (PlainResource, DynamicResource)):
+                res_info = res.get_info()
+                if 'formatter' in res_info:
+                    lines.append(f"==> {res_info['formatter']}")
+                else:
+                    lines.append(f"==> {res_info['path']}")
+
+                for route in res:
+                    handler = route.handler
+                    s = f'{route.method} at {handler.__module__}.{handler.__name__}'
+                    lines.append(' '* 8 + ' + ' + s)
+
+            elif isinstance(res, StaticResource):
+                res_info = res.get_info()
+                print(res, res_info)
+                for route in res:
+                    print(route)
+
+        server_log.info("Routes:\n" + '\n'.join(lines))
 

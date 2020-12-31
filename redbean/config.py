@@ -10,7 +10,7 @@ __all__ = ['load', 'setup']
 
 _logger = logging.getLogger('config')
 _is_production_env = False
-_directory = Path('config')
+_directory = Path('conf')
 
 
 def setup(directory=None, production=None):
@@ -32,8 +32,8 @@ def setup(directory=None, production=None):
 def setup_logging():
     conf_obj = load('logging')
     if conf_obj:
-        # import json
-        # print(json.dumps(conf_obj, indent=4))
+        import json
+        print(json.dumps(conf_obj, indent=4))
         logging.config.dictConfig(conf_obj)
 
 def load(name):

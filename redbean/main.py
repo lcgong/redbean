@@ -47,7 +47,7 @@ def cli(app_factory):
 
     os.chdir(args.working_directory)
 
-    setup_config(directory='config')
+    setup_config(directory='conf')
 
     if args.production:
         setup_logging()

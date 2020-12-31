@@ -32,7 +32,7 @@ class PyTest(TestCommand):
 
 setup(
     name='redbean',
-    version='0.5.0',
+    version='0.6.1',
     license="BSD",
     description='A tiny web framwork',
     author='Chenggong Lyu',
@@ -41,7 +41,14 @@ setup(
     packages=find_packages("."),
     # package_dir = {"": "."},
     zip_safe = False,
-    install_requires = ["aiohttp>=3.7"],
+    install_requires = [
+        "aiohttp>=3.7", 
+        "toml>=0.10", 
+        "cryptography>=3.3", 
+        "aiohttp_devtools", 
+        "pytest",
+        "autopep8",
+        ],
     classifiers = [
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",

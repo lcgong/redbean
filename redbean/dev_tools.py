@@ -21,10 +21,13 @@ def setup_log(verbose=False):
     adev_config = load_adev_log_config(verbose)
     util_config = load_config('logging')
     _dict_update_deeply(adev_config, util_config)
-    logging.config.dictConfig(adev_config)
 
-    # import json
-    # print(json.dumps(adev_config, indent=4))
+    if verbose:
+        import json; 
+        msg = json.dumps(adev_config, indent=4)
+        print(f"LOG: loading logging configuration\n{msg}\n")
+
+    logging.config.dictConfig(adev_config)
 
 
 def run_app(app_factory_pyfile, app_factory_name, watch_path,
