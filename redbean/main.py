@@ -30,12 +30,17 @@ def cli(app_factory):
     )
     arg_parser.add_argument('--production', action='store_true',
                             help='to enable production environment')
+
     arg_parser.add_argument(
         "--working-directory",
         help=f"Working directory(default: '{working_directory}')",
         type=str,
         default=working_directory
     )                            
+
+    arg_parser.add_argument('--verbose', action='store_true',
+                            help='to show logging configuration')
+
     args = arg_parser.parse_args()
 
     if args.production:
@@ -50,7 +55,7 @@ def cli(app_factory):
     setup_config(directory='conf')
 
     if args.production:
-        setup_logging()
+        setup_logging(verbose=args.verbose)
         log_format = '%a (%{X-Real-IP}i) %t "%r" %s %b "%{Referer}i" "%{User-Agent}i"'
 
         aiohttp.web.run_app(app_factory(),

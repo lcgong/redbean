@@ -16,6 +16,7 @@ _directory = Path('conf')
 def setup(directory=None, production=None):
 
     global _is_production_env
+    global _directory
 
     import os
     _python_env = os.environ.get("PYTHON_ENV")
@@ -29,12 +30,17 @@ def setup(directory=None, production=None):
         print(f"cannot find directory: {_directory}", file=sys.stderr)
         sys.exit(1)
 
-def setup_logging():
+def setup_logging(verbose=False):
     conf_obj = load('logging')
-    if conf_obj:
+    if conf_obj is None:
+        return
+    
+    if verbose:
         import json
-        print(json.dumps(conf_obj, indent=4))
-        logging.config.dictConfig(conf_obj)
+        msg = json.dumps(conf_obj, indent=4)
+        print(f"=== loggging configuration ===\n{msg}\n", )
+
+    logging.config.dictConfig(conf_obj)
 
 def load(name):
 

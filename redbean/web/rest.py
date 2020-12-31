@@ -1,14 +1,16 @@
+from ..exception import BusinessRuleFailedError
+from ..exception import NotFoundError, UnauthorizedError, ForbidenError
+from .session import get_http_session
+import traceback
+from sqlblock.utils import json_dumps, json_loads
+import logging
 import inspect
 import functools
-
+from os import stat
 from aiohttp import web
 
-from sqlblock.utils import json_dumps, json_loads
-import traceback
+redbean_logger = logging.getLogger("redbean")
 
-from .session import get_http_session
-from ..exception import NotFoundError, UnauthorizedError
-from ..exception import BusinessRuleFailedError
 
 def cast_value(arg_spec, raw_value):
     if arg_spec.annotation == str and raw_value is not None:
@@ -57,8 +59,8 @@ def build_argument_getters(arguments):
             continue
 
         if arg_name == 'json_request':
-            setters.append(
-                (arg_name, _json_request_getter(arg_name, arg_spec)))
+            arg_value = _json_request_getter(arg_name, arg_spec)
+            setters.append((arg_name, arg_value))
             continue
 
         if arg_name == 'http_request' or arg_name == 'request':
@@ -85,36 +87,55 @@ def rest_method(target_func):
     arg_getters = build_argument_getters(func_sig.parameters)
 
     async def _wrapper_func(request):
-
         try:
             arg_values = dict([(arg_name, await arg_getter(request))
                                for arg_name, arg_getter in arg_getters])
             res = await target_func(**arg_values)
-        except NotFoundError as exc:
-            return web.json_response({
-                "error": "NotFound",
-                "message": str(exc)
-            }, status=404, dumps=json_dumps)
-        except UnauthorizedError as exc:
-            return web.json_response({
-                "error": "Unauthorized",
-                "message": str(exc)
-            }, status=401, dumps=json_dumps)
-        except BusinessRuleFailedError as exc:
-            return web.json_response({
-                "error": "Unauthorized",
-                "message": str(exc)
-            }, status=409, dumps=json_dumps)            
-        except Exception as exc:
-            return web.json_response({
-                "error": "ServerError",
-                "message": f"Server {type(exc).__name__}: {str(exc)}",
-                "details": traceback.format_exc(),
-            }, status=500, dumps=json_dumps)
+            if isinstance(res, web.StreamResponse):
+                return res
 
-        if not isinstance(res, web.StreamResponse):
             return web.json_response(res, dumps=json_dumps)
-        else:
-            return res
+
+        except Exception as exc:
+            return make_json_error_response(exc)
 
     return functools.update_wrapper(_wrapper_func, target_func)
+
+
+def make_json_error_response(exc):
+    error_message = str(exc)
+    if isinstance(exc, NotFoundError):
+        status = 404
+        error_type = "NotFound"
+
+    elif isinstance(exc, UnauthorizedError):
+        status = 401
+        error_type = "Unauthorized"
+
+    elif isinstance(exc, ForbidenError):
+        status = 403
+        error_type = "ForbidenError"
+
+    elif isinstance(exc, BusinessRuleFailedError):
+        status = 409
+        error_type = ""
+
+    else:
+        status = 500
+        error_type = "ServerError"
+        error_message = f"Server {type(exc).__name__}: {error_message}"
+
+    details = traceback.format_exc()
+
+    log_message = f"{error_type} ({status}): {error_message}\n{details}\n"
+    if status >= 400 and status < 500:
+        redbean_logger.warning(log_message)
+    elif status >= 500:
+        redbean_logger.error(log_message)
+
+    return web.json_response({
+        "status": status,
+        "error": error_type,
+        "message": error_message,
+        "details": details,
+    }, status=status, dumps=json_dumps)

@@ -1,15 +1,12 @@
-from distutils.core import setup
-from setuptools import find_packages
+import setuptools
+import setuptools.command.test
 
-import os
-import sys
-from setuptools.command.test import test as TestCommand
 
-class PyTest(TestCommand):
+class PyTest(setuptools.command.test.test):
     test_package_name = 'MyMainPackage'
 
     def finalize_options(self):
-        TestCommand.finalize_options(self)
+        self.finalize_options(self)
         _test_args = [
             '--verbose',
             '--ignore=build',
@@ -17,6 +14,8 @@ class PyTest(TestCommand):
             '--cov-report=term-missing',
             # '--pep8',
         ]
+
+        import os
         extra_args = os.environ.get('PYTEST_EXTRA_ARGS')
         if extra_args is not None:
             _test_args.extend(extra_args.split())
@@ -28,28 +27,31 @@ class PyTest(TestCommand):
         from pkg_resources import normalize_path, _namespace_packages
 
         errno = pytest.main(self.test_args)
+
+        import sys
         sys.exit(errno)
 
-setup(
+
+setuptools.setup(
     name='redbean',
-    version='0.6.1',
+    version='0.6.3',
     license="BSD",
     description='A tiny web framwork',
     author='Chenggong Lyu',
     author_email='lcgong@gmail.com',
     url='https://github.com/lcgong/redbean',
-    packages=find_packages("."),
+    packages=setuptools.find_packages("."),
     # package_dir = {"": "."},
-    zip_safe = False,
-    install_requires = [
-        "aiohttp>=3.7", 
-        "toml>=0.10", 
-        "cryptography>=3.3", 
-        "aiohttp_devtools", 
+    zip_safe=False,
+    install_requires=[
+        "aiohttp>=3.7",
+        "toml>=0.10",
+        "cryptography>=3.3",
+        "aiohttp_devtools",
         "pytest",
         "autopep8",
-        ],
-    classifiers = [
+    ],
+    classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: BSD License",
@@ -59,15 +61,15 @@ setup(
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
-        ],
+    ],
     test_suite='test',
     tests_require=[
         'pytest',
         'pytest-pep8',
         'pytest-cov',
-        ],
+    ],
     cmdclass={'test': PyTest},
-
-    )
+)

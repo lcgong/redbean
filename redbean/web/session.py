@@ -23,10 +23,6 @@ SESSION_FATORY = 'session_factory'
 def secret_factory(secret_key):
     return fernet.Fernet(secret_key)
 
-# def setup_session(app, secret_key, session_factory):
-#     app[SESSION_FERNET] = fernet.Fernet(secret_key)
-#     app[SESSION_FATORY] = session_factory
-
 
 async def get_http_session(request):
 
