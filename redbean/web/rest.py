@@ -3,7 +3,7 @@ import functools
 
 from aiohttp import web
 
-from sqlblock.json import json_dumps, json_loads
+from sqlblock.utils import json_dumps, json_loads
 import traceback
 
 from .session import get_http_session
@@ -61,7 +61,7 @@ def build_argument_getters(arguments):
                 (arg_name, _json_request_getter(arg_name, arg_spec)))
             continue
 
-        if arg_name == 'request':
+        if arg_name == 'http_request' or arg_name == 'request':
             async def _setter(request):
                 return request
 
