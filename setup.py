@@ -34,7 +34,7 @@ class PyTest(setuptools.command.test.test):
 
 setuptools.setup(
     name='redbean',
-    version='0.6.3',
+    version='0.6.5',
     license="BSD",
     description='A tiny web framwork',
     author='Chenggong Lyu',
@@ -47,9 +47,8 @@ setuptools.setup(
         "aiohttp>=3.7",
         "toml>=0.10",
         "cryptography>=3.3",
-        "aiohttp_devtools",
+        "watchgod>=0.6",
         "pytest",
-        "autopep8",
     ],
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",

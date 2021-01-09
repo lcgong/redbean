@@ -26,9 +26,9 @@ def setup(directory=None, production=None):
     if directory is not None:
         _directory = Path(directory)
 
-    if not _directory.is_dir():
-        print(f"cannot find directory: {_directory}", file=sys.stderr)
-        sys.exit(1)
+    # if not _directory.is_dir():
+    #     print(f"WARNING: cannot find directory: {_directory}", file=sys.stderr)
+    #     sys.exit(1)
 
 def setup_logging(verbose=False):
     conf_obj = load('logging')
@@ -43,6 +43,9 @@ def setup_logging(verbose=False):
     logging.config.dictConfig(conf_obj)
 
 def load(name):
+    if not _directory.is_dir():
+        print(f"WARNING: cannot find directory: {_directory}", file=sys.stderr)
+        return
 
     conf_obj = {}
     config_file = _directory / (name + '.toml')

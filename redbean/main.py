@@ -6,8 +6,8 @@ from pathlib import Path
 
 from .config import setup as setup_config
 from .config import setup_logging
-from .dev_tools import setup_log as dev_setup_log
-from .dev_tools import run_app as dev_run_app
+import redbean.dev_tools
+from .logs import setup_log_config
 
 
 def cli(app_factory):
@@ -26,7 +26,7 @@ def cli(app_factory):
         "-p", "--port",
         help="TCP/IP port to serve on (default: %(default)r)",
         type=int,
-        default="8080"
+        default="8000"
     )
     arg_parser.add_argument('--production', action='store_true',
                             help='to enable production environment')
@@ -36,7 +36,7 @@ def cli(app_factory):
         help=f"Working directory(default: '{working_directory}')",
         type=str,
         default=working_directory
-    )                            
+    )
 
     arg_parser.add_argument('--verbose', action='store_true',
                             help='to show logging configuration')
@@ -44,27 +44,29 @@ def cli(app_factory):
     args = arg_parser.parse_args()
 
     if args.production:
-        os.environ['PYTHON_ENV'] = 'production'
+        os.environ['PRODUCTION_MODE'] = 'production'
 
     if args.port:
         os.environ['PORT'] = str(args.port)
-
 
     os.chdir(args.working_directory)
 
     setup_config(directory='conf')
 
-    if args.production:
-        setup_logging(verbose=args.verbose)
-        log_format = '%a (%{X-Real-IP}i) %t "%r" %s %b "%{Referer}i" "%{User-Agent}i"'
+    log_format = '%a (%{X-Real-IP}i) %t "%r" %s %b "%{Referer}i" "%{User-Agent}i"'
 
+    setup_log_config(verbose=args.verbose, is_production_mode=args.production)
+
+    if args.production:
         aiohttp.web.run_app(app_factory(),
                             host=args.host,
                             port=args.port,
                             access_log_format=log_format)
     else:
-        dev_setup_log(verbose=False)
-        dev_run_app(app_factory_pyfile,
-                    app_factory_name=app_factory.__name__,
-                    watch_path=working_directory,
-                    host=args.host, port=args.port)
+        redbean.dev_tools.run_app(app_factory,
+                                  working_directory=working_directory,
+                                  host=args.host,
+                                  port=args.port,
+                                  access_log_format=log_format,
+                                  verbose=args.verbose,
+                                  is_production_mode=False)

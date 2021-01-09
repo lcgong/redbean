@@ -1,6 +1,3 @@
-
-
-
 import aiohttp.web
 
 from .web.rest import rest_method
@@ -10,3 +7,4 @@ class RouteTableDef(aiohttp.web.RouteTableDef):
     pass
 
 from .web.application import Application
+from .main import cli
