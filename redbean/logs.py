@@ -1,3 +1,5 @@
+from aiohttp.web_urldispatcher import StaticResource
+from aiohttp.web_urldispatcher import PlainResource, DynamicResource
 import logging
 import sys
 import os
@@ -136,3 +138,28 @@ def _isatty(stream=None):
 #                          delay=delay,
 #                          utc=utc,
 #                          atTime=atTime)
+
+def log_application_routes(app):
+
+    lines = []
+    for res in app.router.resources():
+
+        if isinstance(res, (PlainResource, DynamicResource)):
+            res_info = res.get_info()
+            if 'formatter' in res_info:
+                lines.append(f"==> {res_info['formatter']}")
+            else:
+                lines.append(f"==> {res_info['path']}")
+
+            for route in res:
+                handler = route.handler
+                s = f'{route.method} at {handler.__module__}.{handler.__name__}'
+                lines.append(' ' * 8 + ' + ' + s)
+
+        elif isinstance(res, StaticResource):
+            res_info = res.get_info()
+            print(res, res_info)
+            for route in res:
+                print(route)
+
+    app.logger.info("Routes:\n" + '\n'.join(lines))

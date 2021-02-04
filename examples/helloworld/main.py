@@ -1,10 +1,12 @@
 import redbean
 from redbean import rest_method
+import redbean.web.routedef
 
 routes = redbean.RouteTableDef()
 import logging
 
 logger = logging.getLogger("hello")
+routes = redbean.web.routedef.RouteTableDef(prefix="/api")
 
 @routes.get("/")
 @rest_method

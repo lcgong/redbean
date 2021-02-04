@@ -1,3 +1,4 @@
+from asyncio import AbstractEventLoop
 from redbean.logs import setup_log_config
 import contextlib
 import os
@@ -9,14 +10,11 @@ import sys
 import multiprocessing
 import aiohttp.web
 
-from aiohttp.web_runner import AppRunner, TCPSite
-
 from watchgod import awatch
-from aiohttp import ClientSession
 from importlib import import_module
 
 import logging
-logger = logging.getLogger('app_runner')
+logger = logging.getLogger('redbean.dev')
 
 
 def run_app(app_factory, working_directory, host=None,
@@ -245,7 +243,7 @@ def serve_main_app(config: Config):
             loop.run_until_complete(runner.cleanup())
 
 
-async def start_main_app(config: Config, loop):
+async def start_main_app(config: Config, loop: AbstractEventLoop):
 
     await check_port_open(config.host, config.port, loop)
 

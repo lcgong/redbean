@@ -1,11 +1,6 @@
 import time
-# import aiohttp
-
 from cryptography.fernet import InvalidToken
 from cryptography import fernet
-# from sqlblock.json import json_dumps
-# from aiohttp.abc import AbstractStreamWriter
-# from typing import Optional
 
 from ..exception import UnauthorizedError
 
@@ -18,6 +13,18 @@ CONTEXT_COOKIE = "tgu-context"
 
 SESSION_FERNET = "session_fernet"
 SESSION_FATORY = 'session_factory'
+
+
+def setup_session(app, factory=None, secret=None):
+    
+    if secret is not None:
+        assert isinstance(secret, str)
+
+        from cryptography import fernet
+        app[SESSION_FERNET] = fernet.Fernet(secret)
+
+    if factory is not None:
+        app[SESSION_FATORY] = factory
 
 
 def secret_factory(secret_key):
